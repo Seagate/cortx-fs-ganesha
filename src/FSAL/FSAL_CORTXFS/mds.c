@@ -91,7 +91,7 @@
 
 extern struct kvsfs_fsal_module KVSFS;
 
-/* FSAL_KVSFS currently supports only LAYOUT4_NFSV4_1_FILES */
+/* FSAL_CORTXFS currently supports only LAYOUT4_NFSV4_1_FILES */
 #define SUPPORTED_LAYOUT_TYPE LAYOUT4_NFSV4_1_FILES
 
 /*  Only 4MB as of now */

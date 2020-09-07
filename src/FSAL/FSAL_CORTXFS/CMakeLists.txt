@@ -104,7 +104,7 @@ if(NOT HAVE_CORTX_UTILS_H)
     message(FATAL_ERROR "STRICT_PACKAGE: Cannot find CORTX-UTILS runtime. Disabling KVSFS build")
  else(STRICT_PACKAGE)
     message(WARNING "Cannot find CORTX-UTILS runtime. Disabling KVSFS build")
-    set(USE_FSAL_KVSFS OFF)
+    set(USE_FSAL_CORTXFS OFF)
   endif(STRICT_PACKAGE)
 endif(NOT HAVE_CORTX_UTILS_H)
 
