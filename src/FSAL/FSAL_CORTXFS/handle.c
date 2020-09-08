@@ -2674,6 +2674,7 @@ static fsal_status_t kvsfs_close2(struct fsal_obj_handle *obj_hdl,
 		break;
 	case STATE_TYPE_LAYOUT:
 		/* Unsupported (yet) state types. */
+		gtbl_layout_rmv_elem((const struct kvsfs_file_handle *) obj->handle);
 		T_TRACE("%s", "Closing layout state");
 		break;
 

@@ -155,6 +155,8 @@ static fsal_status_t kvsfs_init_config(struct fsal_module *fsal_hdl,
 		}
 	}
 
+	gtbl_ini();
+
 	/**
 	 * TODO: In future when we move away from using ganesha.conf file
 	 * for the pNFS params and start using the /etc/cortx/cortxfs.conf
@@ -319,6 +321,8 @@ static int kvsfs_unload(struct fsal_module *fsal_hdl)
 			" unregister itself (%d).", rc);
 		goto out;
 	}
+
+	gtbl_fini();
 
 	rc = cfs_fini();
 	if (rc) {

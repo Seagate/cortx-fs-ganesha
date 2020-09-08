@@ -102,4 +102,51 @@ void export_ops_pnfs(struct export_ops *ops);
 void handle_ops_pnfs(struct fsal_obj_ops *ops);
 void kvsfs_pnfs_ds_ops_init(struct fsal_pnfs_ds_ops *ops);
 
+enum cortxfs_gtbl_types {
+	CORTXFS_GTBL_CLIENT = 0,
+	CORTXFS_GTBL_STATE_OPEN,
+	CORTXFS_GTBL_STATE_BR_LOCKS,
+	CORTXFS_GTBL_STATE_DELEGS,
+	CORTXFS_GTBL_STATE_LAYOUTS,
+	CORTXFS_GTBL_STATE_END
+};
+
+/**
+ * Initialize the CORTXFS FSAL's global tables
+ */
+void gtbl_ini(void);
+
+/**
+ * Free the CORTXFS FSAL's global tables
+ */
+void gtbl_fini(void);
+
+/**
+ * Add an entry to CORTXFS FSAL's global table
+ * Caller must pass pre-allocated elem
+ * Returns 0 if success, else error code
+ */
+int gtbl_add_elem(enum cortxfs_gtbl_types type, void *elem,
+		   size_t elem_size, uint64_t key);
+
+/**
+ * Find an entry in CORTXFS FSAL's global table
+ * Caller must not free elem
+ */
+void * gtbl_find_elem(enum cortxfs_gtbl_types type, const void *elem,
+		      size_t elem_size, uint64_t key);
+
+/**
+ * Free an entry from CORTXFS FSAL's global table
+ * Returns NULL if not found
+ * Caller must free elem
+ */
+void * gtbl_remove_elem(enum cortxfs_gtbl_types type, const void *elem,
+			size_t elem_size, uint64_t key);
+
+/**
+ * Call this API when a layout on a file handle is being returned/freed
+ */
+void gtbl_layout_rmv_elem(const struct kvsfs_file_handle *lt_fh);
+
 #endif /* _FSAL_INTERNAL_H */
