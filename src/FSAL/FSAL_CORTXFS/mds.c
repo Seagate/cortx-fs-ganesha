@@ -166,6 +166,72 @@ struct kvsfs_pnfs_mds_ctx {
 	struct kvsfs_pnfs_mds_info *mds;
 };
 
+// TODO: We should use cortxfs_gtbl_elm_layout in future instead of kvsfs_file_handle
+struct cortxfs_gtbl_elm_layout {
+	struct kvsfs_file_handle lt_fh;
+	uint64_t lt_offset;
+	uint64_t lt_length;
+	struct kvsfs_file_state *lt_fd;
+} __attribute__((__unused__));
+
+#define LAYOUT_TBL_HT_KEY(fh) (fh->fs_id + fh->kvsfs_handle)
+
+/**
+ * @brief Start a layout by updating global table CORTXFS_GTBL_STATE_LAYOUTS
+ *        Also used to detect conflicts.
+ *
+ * @param[in]  fh         KVSFS file handle on which layout is requested
+ * @return nfsstat4, 0 if success, else error value
+ * TODO: In future when the global open tables are completely implemented
+ *       and multiple layout to different regions of a same file object
+ *       will be supported, then we'll need to replace the kvsfs_file_handle
+ *       with cortxfs_gtbl_elm_layout, and use that for the key generation.
+ */
+
+static nfsstat4 gtbl_layout_add_elem(const struct kvsfs_file_handle *fh)
+{
+	uint64_t key;
+	struct kvsfs_file_handle *lt_fh;
+
+	dassert(fh != NULL);
+
+	lt_fh = gsh_calloc(1, sizeof(*lt_fh));
+	dassert(lt_fh != NULL);
+
+	*lt_fh = *fh;
+	key = LAYOUT_TBL_HT_KEY(lt_fh);
+
+	if (gtbl_add_elem(CORTXFS_GTBL_STATE_LAYOUTS, lt_fh,
+			  sizeof(*lt_fh), key) != 0) {
+		// conflict
+		gsh_free(lt_fh);
+		return NFS4ERR_LAYOUTTRYLATER;
+	}
+
+	return NFS4_OK;
+}
+
+/**
+ * @brief Try to remove a layout by updating global table
+ *        CORTXFS_GTBL_STATE_LAYOUTS
+ *
+ * @param[in]  fh         KVSFS file handle on which layout is expected 
+ * @return void
+ */
+
+void gtbl_layout_rmv_elem(const struct kvsfs_file_handle *fh)
+{
+	uint64_t key;
+	struct kvsfs_file_handle *lt_fh;
+
+	dassert(fh != NULL);
+
+	key = LAYOUT_TBL_HT_KEY(fh);
+	lt_fh = gtbl_remove_elem(CORTXFS_GTBL_STATE_LAYOUTS, fh,
+				 sizeof(*fh), key);
+	gsh_free(lt_fh);
+}
+
 
 /**
  * @brief Initialize the KVSFS FSAL's global pNFS config, must be called only
@@ -948,6 +1014,14 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 	memcpy(&kvsfs_ds_handle,
 	       myself->handle, sizeof(struct kvsfs_file_handle));
 
+	nfs_status = gtbl_layout_add_elem(&kvsfs_ds_handle);
+	if (nfs_status != NFS4_OK) {
+		LogCrit(COMPONENT_PNFS,
+			"Failed to add nfsv4_1_file_layout: %x", nfs_status);
+		T_EXIT0(nfs_status);
+		goto relinquish;
+	}
+
 	ds_desc.addr = &kvsfs_ds_handle;
 	ds_desc.len = sizeof(struct kvsfs_file_handle);
 
@@ -964,6 +1038,7 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 		LogCrit(COMPONENT_PNFS,
 			"Failed to encode nfsv4_1_file_layout.");
 		T_EXIT0(nfs_status);
+		gtbl_layout_rmv_elem(&kvsfs_ds_handle);
 		goto relinquish;
 	}
 
@@ -1012,6 +1087,7 @@ kvsfs_layoutreturn(struct fsal_obj_handle *obj_hdl,
 			      obj_handle);
 
 	/* TODO: Unlock the layout lock from this file handle */
+	gtbl_layout_rmv_elem((const struct kvsfs_file_handle *) myself->handle);
 
 	T_EXIT0(NFS4_OK);
 	return NFS4_OK;
@@ -1062,6 +1138,7 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 			     struct kvsfs_fsal_obj_handle,
 			     obj_handle);
 	// kvsfs_handle = myself->handle;
+	gtbl_layout_rmv_elem(myself->handle);
 
 	/** @todo: here, add code to actually commit the layout */
 	res->size_supplied = false;

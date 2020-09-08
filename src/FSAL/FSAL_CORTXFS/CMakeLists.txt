@@ -116,6 +116,7 @@ set(LIBCONFIG libconfig)
 
 SET(fsalkvsfs_LIB_SRCS
    fsal_internal.c
+   fsal_global_tables.c
    main.c
    export.c
    handle.c
