@@ -71,7 +71,7 @@ function get_ip {
 function get_ep {
 	[ -n "$EP" ] && return || EP=1
 
-	host_name=$(hostname -f )
+	host_name=$(cat /etc/salt/minion_id)
 	hctl_status=$(hctl status --json | jq '.')
 
 	cluster_info=$(echo $hctl_status | jq '.nodes[]')
