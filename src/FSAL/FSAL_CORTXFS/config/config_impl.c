@@ -97,7 +97,12 @@ void json_to_dataserver_block(struct json_object *obj, struct ds_block *block)
 
 	json_object_object_get_ex(obj, "data_server", &json_obj);
 	if (json_obj == NULL) {
-		str = "None";
+		/* This is a workaround till we restructure
+ 		 * the parsing of pNFS block.Assign a dummy
+ 		 * IP address, so that file system export does
+ 		 * not fail
+ 		 */
+		str = "127.0.0.1";	
 	} else {
 		str = json_object_get_string(json_obj);
 	}
@@ -124,14 +129,14 @@ void json_to_pnfs_block(struct json_object *obj, struct pnfs_block *block)
 	}
 	str256_from_cstr(block->pnfs_enabled, str, strlen(str));
 
-	json_object_object_get_ex(obj, "data_server", &json_obj);
-	if (json_obj == NULL) {
-		str = "0";
-		str256_from_cstr(block->ds_count, str, strlen(str));
-	} else {
-		str = "1";
-		str256_from_cstr(block->ds_count, str, strlen(str));
-	}
+	/* Due to parsing limitations in nfs ganesha conf,
+ 	 * there is support for only 1 data server currently.
+ 	 * This is temporary and PNFS config parsing
+ 	 * will be restructured and moved out of the export block
+ 	 */
+
+	str = "1";
+	str256_from_cstr(block->ds_count, str, strlen(str));
 
 	json_to_dataserver_block(obj, &block->ds_block);
 	return;
@@ -207,6 +212,17 @@ int json_to_export_block(const char *name, uint16_t id, struct json_object *obj,
 	str256_from_cstr(block->path, name, strlen(name));
 	str256_from_cstr(block->pseudo, name, strlen(name));
 
+	/* Set the attr time as 1s if pNFS is enabled, else the default value of 60s*/
+	block->Attr_Expiration_Time = EXPIRE_TIME_ATTR_DEFAULT;
+	json_object_object_get_ex(obj, "pnfs_enabled", &json_obj);
+	if (json_obj != NULL) {
+		str = json_object_get_string(json_obj);
+		if ( strcmp(str,"true") == 0) {
+				/* Disable Meta data cache for pNFS */
+				block->Attr_Expiration_Time = EXPIRE_TIME_ATTR_PNFS;
+		}
+	}
+
 	json_to_export_fsal_block(obj, &block->fsal_block);
 	json_object_object_get_ex(obj, "secType", &json_obj);
 	str = json_object_get_string(json_obj);
@@ -263,24 +279,24 @@ static void fsal_block_to_buffer(struct fsal_block *block,
 				 struct serialized_buffer *buffer)
 {
 	char str[256];
-	sprintf(str, "FSAL {\n");
+	snprintf(str, sizeof(str), "FSAL {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tCORTX-FS {\n");
+	snprintf(str, sizeof(str), "\tCORTX-FS {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tFSAL_Shared_Library = %s;\n",
+	snprintf(str, sizeof(str), "\t\tFSAL_Shared_Library = %s;\n",
 		block->kvsfs_block.fsal_shared_library.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t}\n");
+	snprintf(str, sizeof(str), "\t}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "}\n");
+	snprintf(str, sizeof(str), "}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 }
@@ -291,24 +307,24 @@ static void nfs_core_param_to_buffer(struct nfs_core_param_block *block,
 {
 	char str[256];
 
-	sprintf(str, "NFS_Core_Param {\n");
+	snprintf(str, sizeof(str), "NFS_Core_Param {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tNb_Worker = %u;\n", block->nb_worker);
+	snprintf(str, sizeof(str), "\tNb_Worker = %u;\n", block->nb_worker);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tManage_Gids_Expiration = %u;\n",
+	snprintf(str, sizeof(str), "\tManage_Gids_Expiration = %u;\n",
 			block->manage_gids_expiration);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tPlugins_Dir = %s;\n", PULGINS_DIR);
+	snprintf(str, sizeof(str), "\tPlugins_Dir = %s;\n", PULGINS_DIR);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "}\n");
+	snprintf(str, sizeof(str),"}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 }
@@ -319,19 +335,19 @@ static void nfsv4_to_buffer(struct nfsv4_block *block,
 {
 	char str[256];
 
-	sprintf(str, "NFSv4 {\n");
+	snprintf(str, sizeof(str), "NFSv4 {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tDomainName = %s;\n", DOMAIN_NAME);
+	snprintf(str, sizeof(str), "\tDomainName = %s;\n", DOMAIN_NAME);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tGraceless = %s;\n", "YES");
+	snprintf(str, sizeof(str), "\tGraceless = %s;\n", "YES");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "}\n");
+	snprintf(str, sizeof(str), "}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 }
@@ -343,27 +359,27 @@ static void client_to_buffer(struct client_block *block,
 	char str[256];
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tclient {\n");
+	snprintf(str, sizeof(str), "\tclient {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tclients = %s;\n", block->clients.s_str);
+	snprintf(str, sizeof(str), "\t\tclients = %s;\n", block->clients.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tSquash = %s;\n", block->squash.s_str);
+	snprintf(str, sizeof(str), "\t\tSquash = %s;\n", block->squash.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\taccess_type = %s;\n",  block->access_type.s_str);
+	snprintf(str, sizeof(str), "\t\taccess_type = %s;\n",  block->access_type.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tprotocols = %s;\n", block->protocols.s_str);
+	snprintf(str, sizeof(str), "\t\tprotocols = %s;\n", block->protocols.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t}\n");
+	snprintf(str, sizeof(str), "\t}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 }
@@ -374,39 +390,39 @@ static void pnfs_to_buffer(struct pnfs_block *block,
 	char str[256];
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tPNFS {\n");
+	snprintf(str, sizeof(str), "\t\tPNFS {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\tStripe_Unit = %s;\n", block->stripe_unit.s_str);
+	snprintf(str, sizeof(str), "\t\t\tStripe_Unit = %s;\n", block->stripe_unit.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\tpnfs_enabled = %s;\n", block->pnfs_enabled.s_str);
+	snprintf(str, sizeof(str), "\t\t\tpnfs_enabled = %s;\n", block->pnfs_enabled.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\tNb_Dataserver = %s;\n", block->ds_count.s_str);
+	snprintf(str, sizeof(str), "\t\t\tNb_Dataserver = %s;\n", block->ds_count.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\tDS1 {\n");
+	snprintf(str, sizeof(str), "\t\t\tDS1 {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\t\tDS_Addr = %s;\n", block->ds_block.ds_addr.s_str);
+	snprintf(str, sizeof(str), "\t\t\t\tDS_Addr = %s;\n", block->ds_block.ds_addr.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\t\tDS_Port = %s;\n", block->ds_block.ds_port.s_str);
+	snprintf(str, sizeof(str), "\t\t\t\tDS_Port = %s;\n", block->ds_block.ds_port.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t\t}\n");
+	snprintf(str, sizeof(str), "\t\t\t}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\t}\n");
+	snprintf(str, sizeof(str), "\t\t}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 }
@@ -418,52 +434,56 @@ static void export_to_buffer(struct export_block *block,
 	char str[256];
 
 	memset(str, '\0', sizeof(str));
-	sprintf(str, "EXPORT {\n");
+	snprintf(str, sizeof(str), "EXPORT {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tExport_Id =  %d;\n", block->export_id);
+	snprintf(str, sizeof(str), "\tExport_Id =  %u;\n", block->export_id);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tPath = %s;\n", block->path.s_str);
+	snprintf(str, sizeof(str), "\tPath = %s;\n", block->path.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tPseudo = /%s;\n", block->pseudo.s_str);
+	snprintf(str, sizeof(str), "\tPseudo = /%s;\n", block->pseudo.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tFSAL {\n");
+	snprintf(str, sizeof(str), "\tAttr_Expiration_Time = %u;\n", block->Attr_Expiration_Time);
+	append_data(buffer, str, strlen(str));
+	memset(str, '\0', sizeof(str));
+	
+	snprintf(str, sizeof(str), "\tFSAL {\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tNAME = %s;\n", block->fsal_block.name.s_str);
+	snprintf(str, sizeof(str), "\t\tNAME = %s;\n", block->fsal_block.name.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\t\tcortxfs_config = %s;\n",
+	snprintf(str, sizeof(str), "\t\tcortxfs_config = %s;\n",
 		block->fsal_block.cfs_config.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
 	pnfs_to_buffer(&block->fsal_block.pnfs_block, buffer);
 
-	sprintf(str, "\t}\n");
+	snprintf(str, sizeof(str), "\t}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tSecType = %s;\n", block->sectype.s_str);
+	snprintf(str, sizeof(str), "\tSecType = %s;\n", block->sectype.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	sprintf(str, "\tFilesystem_id = %s;\n", block->filesystem_id.s_str);
+	snprintf(str, sizeof(str), "\tFilesystem_id = %s;\n", block->filesystem_id.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
 	client_to_buffer(&block->client_block, buffer);
 
-	sprintf(str, "}\n");
+	snprintf(str, sizeof(str), "}\n");
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 }
