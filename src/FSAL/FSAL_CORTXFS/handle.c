@@ -105,6 +105,127 @@ cortxfs_fsal_write cortxfs_fsal_writes[2] = {
 	kvsfs_perf_op_write2
 };
 
+typedef void (*cortxfs_fsal_read)(struct fsal_obj_handle *obj_hdl,
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *read_arg,
+			void *caller_arg);
+
+static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *read_arg,
+			void *caller_arg);
+
+static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
+			 bool bypass,
+			 fsal_async_cb done_cb,
+			 struct fsal_io_arg *read_arg,
+			 void *caller_arg);
+
+cortxfs_fsal_read cortxfs_fsal_reads[2] = {
+	kvsfs_read2,
+	kvsfs_perf_op_read2
+};
+
+typedef fsal_status_t (*cortxfs_fsal_open)(struct fsal_obj_handle *obj_hdl,
+				 struct state_t *state,
+				 fsal_openflags_t openflags,
+				 enum fsal_create_mode createmode,
+				 const char *name,
+				 struct attrlist *attrs_in,
+				 fsal_verifier_t verifier,
+				 struct fsal_obj_handle **new_obj,
+				 struct attrlist *attrs_out,
+				 bool *caller_perm_check);
+
+static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
+				 struct state_t *state,
+				 fsal_openflags_t openflags,
+				 enum fsal_create_mode createmode,
+				 const char *name,
+				 struct attrlist *attrs_in,
+				 fsal_verifier_t verifier,
+				 struct fsal_obj_handle **new_obj,
+				 struct attrlist *attrs_out,
+				 bool *caller_perm_check);
+
+static fsal_status_t kvsfs_perf_op_open2(struct fsal_obj_handle *obj_hdl,
+				 struct state_t *state,
+				 fsal_openflags_t openflags,
+				 enum fsal_create_mode createmode,
+				 const char *name,
+				 struct attrlist *attrs_in,
+				 fsal_verifier_t verifier,
+				 struct fsal_obj_handle **new_obj,
+				 struct attrlist *attrs_out,
+				 bool *caller_perm_check);
+
+cortxfs_fsal_open cortxfs_fsal_opens[2] = {
+	kvsfs_open2,
+	kvsfs_perf_op_open2
+};
+
+typedef fsal_status_t (*cortxfs_fsal_lookup)(struct fsal_obj_handle *parent_hdl,
+				  const char *name,
+				  struct fsal_obj_handle **handle,
+				  struct attrlist *attrs_out);
+
+static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
+				  const char *name,
+				  struct fsal_obj_handle **handle,
+				  struct attrlist *attrs_out);
+
+static fsal_status_t kvsfs_perf_op_lookup(struct fsal_obj_handle *parent_hdl,
+				  const char *name,
+				  struct fsal_obj_handle **handle,
+				  struct attrlist *attrs_out);
+
+cortxfs_fsal_lookup cortxfs_fsal_lookups[2] = {
+	kvsfs_lookup,
+	kvsfs_perf_op_lookup
+};
+
+typedef fsal_status_t (*cortxfs_fsal_readdir)(struct fsal_obj_handle *dir_hdl,
+				  fsal_cookie_t *whence, void *dir_state,
+				  fsal_readdir_cb cb, attrmask_t attrmask,
+				  bool *eof);
+
+static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
+				  fsal_cookie_t *whence, void *dir_state,
+				  fsal_readdir_cb cb, attrmask_t attrmask,
+				  bool *eof);
+
+static fsal_status_t kvsfs_perf_op_readdir(struct fsal_obj_handle *dir_hdl,
+				  fsal_cookie_t *whence, void *dir_state,
+				  fsal_readdir_cb cb, attrmask_t attrmask,
+				  bool *eof);
+
+cortxfs_fsal_readdir cortxfs_fsal_readdirs[2] = {
+	kvsfs_readdir,
+	kvsfs_perf_op_readdir
+};
+
+typedef fsal_status_t (*cortxfs_fsal_mkdir)(struct fsal_obj_handle *dir_hdl,
+				const char *name, struct attrlist *attrs_in,
+				struct fsal_obj_handle **handle,
+				struct attrlist *attrs_out);
+
+static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
+				const char *name, struct attrlist *attrs_in,
+				struct fsal_obj_handle **handle,
+				struct attrlist *attrs_out);
+
+static fsal_status_t kvsfs_perf_op_mkdir(struct fsal_obj_handle *dir_hdl,
+				const char *name, struct attrlist *attrs_in,
+				struct fsal_obj_handle **handle,
+				struct attrlist *attrs_out);
+
+cortxfs_fsal_mkdir cortxfs_fsal_mkdirs[2] = {
+	kvsfs_mkdir,
+	kvsfs_perf_op_mkdir
+};
+
 /* Internal data types */
 
 /** KVSFS version of a file state object.
@@ -292,6 +413,8 @@ static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 	assert(name);
 	assert(strlen(name) > 0);
 
+	cfs_perf_action(PERFC_CFS_LOOKUP_BEGIN);
+
 	if (!fsal_obj_handle_is(parent_hdl, DIRECTORY)) {
 		LogCrit(COMPONENT_FSAL,
 			"Parent handle (%p) is not a directory.", parent_hdl);
@@ -318,8 +441,26 @@ static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 	if (object) {
 		cfs_fh_destroy(object);
 	}
+	cfs_perf_action(PERFC_CFS_LOOKUP_END, posix2fsal_error(-rc), rc);
 	T_EXIT0(-rc);
 	return fsalstat(posix2fsal_error(-rc), -rc);
+}
+
+/**
+ * This is just a wrapper of kvsfs_lookup with added support for TSDB
+ * for monitoring performance
+ */
+static fsal_status_t kvsfs_perf_op_lookup(struct fsal_obj_handle *parent_hdl,
+				  const char *name,
+				  struct fsal_obj_handle **handle,
+				  struct attrlist *attrs_out)
+{
+	fsal_status_t result;
+	struct opstack op = OPSTACK_INIT_EMPTY();
+	cfs_perf_op_ini(&op, &g_cfs_perf_mod, FSUSER_OP_LOOKUP);
+	result = kvsfs_lookup(parent_hdl, name, handle, attrs_out);
+	cfs_perf_op_fini(&op);
+	return result;
 }
 
 /******************************************************************************/
@@ -466,6 +607,8 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	struct attrlist parent_attrs = {0};
 
+	cfs_perf_action(PERFC_CFS_MKDIR_BEGIN);
+
 	/* TODO:PERF: Check if it can be converted into an assert pre-cond */
 	if (!fsal_obj_handle_is(dir_hdl, DIRECTORY)) {
 		LogCrit(COMPONENT_FSAL,
@@ -550,8 +693,26 @@ free_attrs:
 	fsal_release_attrs(&parent_attrs);
 
 out:
+	cfs_perf_action(PERFC_CFS_MKDIR_END, status.major, status.minor);
 	T_EXIT0(status.major);
 	return status;
+}
+
+/**
+ * This is just a wrapper of kvsfs_mkdir with added support for TSDB
+ * for monitoring performance
+ */
+static fsal_status_t kvsfs_perf_op_mkdir(struct fsal_obj_handle *dir_hdl,
+				const char *name, struct attrlist *attrs_in,
+				struct fsal_obj_handle **handle,
+				struct attrlist *attrs_out)
+{
+	fsal_status_t result;
+	struct opstack op = OPSTACK_INIT_EMPTY();
+	cfs_perf_op_ini(&op, &g_cfs_perf_mod, FSUSER_OP_MKDIR);
+	result = kvsfs_mkdir(dir_hdl, name, attrs_in, handle, attrs_out);
+	cfs_perf_op_fini(&op);
+	return result;
 }
 
 /** makesymlink
@@ -856,6 +1017,9 @@ static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 	struct cfs_fs *cfs_fs = NULL;
 	int rc;
 
+
+	cfs_perf_action(PERFC_CFS_READDIR_BEGIN);
+
 	obj = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
 	T_ENTER("parent=%d", (int) *kvsfs_fh_to_ino(obj->handle));
@@ -899,8 +1063,26 @@ static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 	*eof = readdir_ctx.eof;
 
  out:
+	cfs_perf_action(PERFC_CFS_READDIR_END, posix2fsal_error(-rc), rc);
 	T_EXIT0(-rc);
 	return fsalstat(posix2fsal_error(-rc), -rc);
+}
+
+/**
+ * This is just a wrapper of kvsfs_readdir with added support for TSDB
+ * for monitoring performance
+ */
+static fsal_status_t kvsfs_perf_op_readdir(struct fsal_obj_handle *dir_hdl,
+				  fsal_cookie_t *whence, void *dir_state,
+				  fsal_readdir_cb cb, attrmask_t attrmask,
+				  bool *eof)
+{
+	fsal_status_t result;
+	struct opstack op = OPSTACK_INIT_EMPTY();
+	cfs_perf_op_ini(&op, &g_cfs_perf_mod, FSUSER_OP_READDIR);
+	result = kvsfs_readdir(dir_hdl, whence, dir_state, cb, attrmask, eof);
+	cfs_perf_op_fini(&op);
+	return result;
 }
 
 /******************************************************************************/
@@ -2424,6 +2606,9 @@ static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 
 	assert(obj_hdl);
 
+	cfs_perf_action(PERFC_CFS_OPEN_BEGIN, openflags, createmode,
+			verifier[0]);
+
 	if (state == NULL) {
 		LogCrit(COMPONENT_FSAL,
 			"KVSFS does not support NFSv3 clients.");
@@ -2542,9 +2727,36 @@ static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 	}
 
 out:
+	cfs_perf_action(PERFC_CFS_OPEN_END, result.major, result.minor);
 	T_EXIT0(result.major);
 	return result;
 }
+
+/**
+ * This is just a wrapper of kvsfs_open2 with added support for TSDB
+ * for monitoring performance
+ */
+static fsal_status_t kvsfs_perf_op_open2(struct fsal_obj_handle *obj_hdl,
+				 struct state_t *state,
+				 fsal_openflags_t openflags,
+				 enum fsal_create_mode createmode,
+				 const char *name,
+				 struct attrlist *attrs_in,
+				 fsal_verifier_t verifier,
+				 struct fsal_obj_handle **new_obj,
+				 struct attrlist *attrs_out,
+				 bool *caller_perm_check)
+{
+	fsal_status_t result;
+	struct opstack op = OPSTACK_INIT_EMPTY();
+	cfs_perf_op_ini(&op, &g_cfs_perf_mod, FSUSER_OP_OPEN);
+	result = kvsfs_open2(obj_hdl, state, openflags, createmode, name,
+			     attrs_in, verifier, new_obj, attrs_out,
+			     caller_perm_check);
+	cfs_perf_op_fini(&op);
+	return result;
+}
+
 
 /******************************************************************************/
 static fsal_status_t kvsfs_reopen2(struct fsal_obj_handle *obj_hdl,
@@ -2794,6 +3006,9 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 		(unsigned long long) read_arg->iov_count,
 		(unsigned long long) read_arg->iov[0].iov_len);
 
+	cfs_perf_action(PERFC_CFS_READ_BEGIN, read_arg->offset,
+			read_arg->iov_count, read_arg->iov[0].iov_len);
+
 	/* NFS Ganesha uses only a single buffer so far. */
 	assert(read_arg->iov_count == 1);
 
@@ -2821,8 +3036,25 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 
 	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 out:
+	cfs_perf_action(PERFC_CFS_READ_END, result.major, result.minor);
 	T_EXIT0(result.major);
 	done_cb(obj_hdl, result, read_arg, caller_arg);
+}
+
+/**
+ * This is just a wrapper of kvsfs_read2 with added support for TSDB
+ * for monitoring performance
+ */
+static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
+			 bool bypass,
+			 fsal_async_cb done_cb,
+			 struct fsal_io_arg *read_arg,
+			 void *caller_arg)
+{
+	struct opstack op = OPSTACK_INIT_EMPTY();
+	cfs_perf_op_ini(&op, &g_cfs_perf_mod, FSUSER_OP_READ);
+	kvsfs_read2(obj_hdl, bypass, done_cb, read_arg, caller_arg);
+	cfs_perf_op_fini(&op);
 }
 
 /******************************************************************************/
@@ -3025,6 +3257,11 @@ static fsal_status_t kvsfs_commit2(struct fsal_obj_handle *obj_hdl,
 void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 {
 	uint8_t enable_mon = 0;
+	int rc; 
+
+	rc = pthread_key_create(&tls_op_key, NULL);	\
+	dassert(rc == 0);				\
+
 	fsal_default_obj_ops_init(ops);
 
 #ifdef ENABLE_TSDB_ADDB
@@ -3033,9 +3270,9 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 
 	// Namespace
 	ops->release = release;
-	ops->lookup = kvsfs_lookup;
-	ops->readdir = kvsfs_readdir;
-	ops->mkdir = kvsfs_mkdir;
+	ops->lookup = cortxfs_fsal_lookups[enable_mon];;
+	ops->readdir = cortxfs_fsal_readdirs[enable_mon];
+	ops->mkdir = cortxfs_fsal_mkdirs[enable_mon];
 	/* mknode is unsupported by KVSFS */
 
 	ops->symlink = kvsfs_makesymlink;
@@ -3052,14 +3289,14 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 	ops->handle_to_key = kvsfs_handle_to_key;
 
 	// File state
-	ops->open2 = kvsfs_open2;
+	ops->open2 = cortxfs_fsal_opens[enable_mon];
 	ops->status2 = kvsfs_status2;
 	ops->close2 = kvsfs_close2;
 	ops->close = kvsfs_close;
 	ops->reopen2 = kvsfs_reopen2;
 
 	// File IO
-	ops->read2 = kvsfs_read2;
+	ops->read2 = cortxfs_fsal_reads[enable_mon];
 	ops->write2 = cortxfs_fsal_writes[enable_mon];
 	ops->commit2 = kvsfs_commit2;
 

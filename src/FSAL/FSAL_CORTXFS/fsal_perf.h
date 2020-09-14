@@ -16,8 +16,15 @@ extern struct modctx g_cfs_perf_mod;
  * This is used as operation type tag
  */
 enum fsuser_ops {
-	FSUSER_OP_WRITE = 1,
+	FSUSER_OP_START, /** Valid op codes must be greater than this value */
+	FSUSER_OP_WRITE,
+	FSUSER_OP_READ,
+	FSUSER_OP_OPEN,
+	FSUSER_OP_MKDIR,
+	FSUSER_OP_READDIR,
+	FSUSER_OP_LOOKUP,
 	// TODO: Add here for operations of future CFS FSAL handlers
+	FSUSER_OP_END /** Valid op codes must be less than this value */
 };
 
 extern pthread_key_t tls_op_key;
@@ -33,7 +40,7 @@ extern pthread_key_t tls_op_key;
 } while(0)
 
 /** Read the TLS op key and return, NULL if no key set */
-#define cfs_perf_op_get pthread_getspecific(tls_op_key)\
+#define cfs_perf_op_get pthread_getspecific(tls_op_key)
 
 /** Unset the TLS unconditionally */
 #define cfs_perf_op_fini(op, ...) do {			\
@@ -46,6 +53,8 @@ extern pthread_key_t tls_op_key;
 /** Set a TSDB action record */
 #define cfs_perf_action(pfc_action_id, ...) \
 	opstack_action(cfs_perf_op_get, pfc_action_id, __VA_ARGS__)
+
+
 #else
 
 #define cfs_perf_op_ini(op, mod, opcode, ...)
