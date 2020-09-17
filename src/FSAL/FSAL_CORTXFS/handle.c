@@ -135,10 +135,10 @@ extern struct kvsfs_fsal_module KVSFS;
  */
 static void construct_handle(struct fsal_export *export_base,
 			     const cfs_ino_t *ino,
-			     const struct stat *stat,
 			     struct fsal_obj_handle **obj)
 {
 	int rc;
+	struct stat *stat = NULL;
 	struct kvsfs_fsal_obj_handle *result;
 	struct kvsfs_fsal_export *export =
 	    container_of(op_ctx->fsal_export, struct kvsfs_fsal_export, export);
@@ -151,11 +151,13 @@ static void construct_handle(struct fsal_export *export_base,
 	 * in the same as gsh_calloc() aborts execution if there is
 	 * not enough memory.
 	 */
-	rc = cfs_fh_from_ino(export->cfs_fs, ino, stat, &result->handle);
+	rc = cfs_fh_from_ino(export->cfs_fs, ino, &result->handle);
 	if (rc < 0) {
 		LogCrit(COMPONENT_FSAL, "Failed to create FH, rc: %d", rc);
 		abort();
 	}
+
+	stat = cfs_fh_stat(result->handle);
 
 	result->cfs_fs = export->cfs_fs;
 
@@ -266,7 +268,7 @@ static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 	}
 
 	parent = container_of(parent_hdl, struct kvsfs_fsal_obj_handle,
-			     obj_handle);
+			      obj_handle);
 
 	rc = cfs_fh_lookup(&cred, parent->handle, name, &object);
 
@@ -427,7 +429,7 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 	int retval = 0;
 	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
 	cfs_ino_t object;
-	struct stat stat;
+	struct stat *stat = NULL;
 	mode_t unix_mode;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	struct attrlist parent_attrs = {0};
@@ -455,24 +457,16 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 		goto out;
 	}
 
-	retval = cfs_getattr(myself->cfs_fs, &cred, &object, &stat);
-	if (retval < 0) {
-		/* XXX:
-		 * We have created a directory but cannot get its attributes
-		 * What should we do here? remove it?
-		 *
-		 * TODO:PERF:
-		 * cfs_mkdir must return the stats of the created
-		 * directory so that we can avoid this cfs_getattr call.
-		 */
-		status = fsalstat(posix2fsal_error(-retval), -retval);
-		goto out;
-	}
+	construct_handle(op_ctx->fsal_export, &object, handle);
 
-	construct_handle(op_ctx->fsal_export, &object, &stat, handle);
+	/* Get child directory KVSFS handle */
+	hdl = container_of(*handle, struct kvsfs_fsal_obj_handle,
+			   obj_handle);
+
+	stat = cfs_fh_stat(hdl->handle);
 
 	if (attrs_out != NULL) {
-		posix2fsal_attributes_all(&stat, attrs_out);
+		posix2fsal_attributes_all(stat, attrs_out);
 	}
 
 	if (kvsfs_is_acl_enabled()) {
@@ -502,8 +496,7 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 		        T_TRACE("Failed to inherit parent dir %p acl", dir_hdl);
 			goto free_attrs;
 		}
-		hdl = container_of(*handle, struct kvsfs_fsal_obj_handle,
-			            obj_handle);
+
 		status = kvsfs_setacl(hdl, &cred, attrs_in->acl);
 			if (FSAL_IS_ERROR(status)) {
 				LogCrit(COMPONENT_FSAL,
@@ -537,7 +530,7 @@ static fsal_status_t kvsfs_makesymlink(struct fsal_obj_handle *dir_hdl,
 	int retval = 0;
 	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
 	cfs_ino_t object;
-	struct stat stat;
+	struct stat *stat = NULL;
 	struct fsal_obj_handle *new_hdl = NULL;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 
@@ -560,13 +553,7 @@ static fsal_status_t kvsfs_makesymlink(struct fsal_obj_handle *dir_hdl,
 		goto out;
 	}
 
-	retval = cfs_getattr(myself->cfs_fs, &cred, &object, &stat);
-	if (retval < 0) {
-		status = fsalstat(posix2fsal_error(-retval), -retval);
-		goto out;
-	}
-
-	construct_handle(op_ctx->fsal_export, &object, &stat, &new_hdl);
+	construct_handle(op_ctx->fsal_export, &object, &new_hdl);
 
 	/* The caller might want to set something except 'mode' */
 	if (FSAL_TEST_MASK(attrib->valid_mask, ATTR_MODE)) {
@@ -591,7 +578,13 @@ static fsal_status_t kvsfs_makesymlink(struct fsal_obj_handle *dir_hdl,
 				 * was set on create, just use the stat results we used
 				 * to create the fsal_obj_handle.
 				 */
-				posix2fsal_attributes_all(&stat, attrs_out);
+				/* Get child KVSFS handle */
+				hdl = container_of(new_hdl,
+						   struct kvsfs_fsal_obj_handle,
+						   obj_handle);
+
+				stat = cfs_fh_stat(hdl->handle);
+				posix2fsal_attributes_all(stat, attrs_out);
 			}
 		}
 
@@ -729,21 +722,22 @@ struct kvsfs_readdir_cb_ctx {
 /** A callback to be called for each READDIR entry.
  * @param[in, out] ctx  - Callback state (context).
  * @param[in]      name - Name of the dentry.
- * @param[in]      stat - stat attributes of particular dentry to be used in
- *                        callback
+ * @param[in]      child_ino - Inode number of a child
  * @retval true if more entries are requested.
  * @retval false if iterations must be interrupted.
  * @see populate_dirent in nfs-ganesha.
 */
 static bool kvsfs_readdir_cb(void *ctx, const char *name,
-                             const struct stat *stat)
+                             cfs_ino_t child_ino)
 {
 	bool retval;
 	struct kvsfs_readdir_cb_ctx *cb_ctx = ctx;
 	enum fsal_dir_result dir_res;
 	struct attrlist attrs;
 	struct fsal_obj_handle *obj;
-	cfs_ino_t child_ino = stat->st_ino;
+	struct kvsfs_fsal_obj_handle *hdl;
+	struct stat *stat = NULL;
+
 	cfs_cred_t cred  = CFS_CRED_INIT_FROM_OP;
 
 	assert(cb_ctx != NULL);
@@ -772,7 +766,13 @@ static bool kvsfs_readdir_cb(void *ctx, const char *name,
 
 	fsal_prepare_attrs(&attrs, cb_ctx->attrmask);
 
-	construct_handle(op_ctx->fsal_export, &child_ino, stat, &obj);
+	construct_handle(op_ctx->fsal_export, &child_ino, &obj);
+
+	hdl = container_of(obj, struct kvsfs_fsal_obj_handle,
+			   obj_handle);
+
+	stat = cfs_fh_stat(hdl->handle);
+
 	posix2fsal_attributes_all(stat, &attrs);
 
 	T_TRACE("READDIR_CB: %s, %p, %d", name, obj, (int) cb_ctx->where);
@@ -1560,6 +1560,10 @@ static void release(struct fsal_obj_handle *obj_hdl)
 
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
+	if (obj->handle) {
+		cfs_fh_destroy(obj->handle);
+	}
+
 	fsal_obj_handle_fini(obj_hdl);
 
 	gsh_free(obj);
@@ -2169,12 +2173,13 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 {
 	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	int rc;
-	struct kvsfs_fsal_obj_handle *parent_obj;
+	struct kvsfs_fsal_obj_handle *parent_obj, *hdl;
 	struct fsal_obj_handle *obj_hdl = NULL;
 	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
 	cfs_ino_t object;
 	struct stat stat_in;
 	struct stat stat_out;
+	struct stat *stat = NULL;
 	int flags;
 
 	T_ENTER(">>> (parent=%p, state=%p, name=%s, attrs_in=%p, attrs_out=%p)",
@@ -2193,6 +2198,9 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 		goto out;
 	}
 
+	/* TODO: As we will have FH, it hold the reference of stat attributes,
+	 * so we will get rid of stat_out/stat_in param in this API
+	 */
 	rc = cfs_creat_ex(parent_obj->cfs_fs, &cred,
 			  kvsfs_fh_to_ino(parent_obj->handle),
 			  (char *) name,
@@ -2205,7 +2213,12 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 		goto out;
 	}
 
-	construct_handle(op_ctx->fsal_export, &object, &stat_out, &obj_hdl);
+	construct_handle(op_ctx->fsal_export, &object, &obj_hdl);
+
+	hdl = container_of(obj_hdl, struct kvsfs_fsal_obj_handle,
+			   obj_handle);
+
+	stat = cfs_fh_stat(hdl->handle);
 
 	result = kvsfs_open2_by_handle(obj_hdl, state, openflags, NULL, NULL);
 	if (FSAL_IS_ERROR(result)) {
@@ -2213,7 +2226,7 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 	}
 
 	if (attrs_out != NULL) {
-		posix2fsal_attributes_all(&stat_out, attrs_out);
+		posix2fsal_attributes_all(stat, attrs_out);
 	}
 
 	*pnew_obj = obj_hdl;
@@ -2248,12 +2261,13 @@ kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *nam
 {
 	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	int rc;
-	struct kvsfs_fsal_obj_handle *parent_obj;
+	struct kvsfs_fsal_obj_handle *parent_obj, *hdl;
 	struct fsal_obj_handle *obj_hdl = NULL;
 	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
 	cfs_ino_t object;
 	struct stat stat_in;
 	struct stat stat_out;
+	struct stat *stat = NULL;
 	int flags;
 
 	/* attrs_in is not empty but only fattr.mode is set. */
@@ -2285,6 +2299,9 @@ kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *nam
 	parent_obj = container_of(parent_obj_hdl,
 				  struct kvsfs_fsal_obj_handle, obj_handle);
 
+	/* TODO: As we will have FH, it hold the reference of stat attributes,
+	 * so we will get rid of stat_out/stat_in param in this API
+	 */
 	rc = cfs_creat_ex(parent_obj->cfs_fs, &cred,
 			  kvsfs_fh_to_ino(parent_obj->handle),
 			  (char *) name,
@@ -2297,7 +2314,13 @@ kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *nam
 		goto out;
 	}
 
-	construct_handle(op_ctx->fsal_export, &object, &stat_out, &obj_hdl);
+	construct_handle(op_ctx->fsal_export, &object, &obj_hdl);
+
+	hdl = container_of(obj_hdl, struct kvsfs_fsal_obj_handle,
+			   obj_handle);
+
+	stat = cfs_fh_stat(hdl->handle);
+
 
 	result = kvsfs_open2_by_handle(obj_hdl, state, openflags, NULL, NULL);
 	if (FSAL_IS_ERROR(result)) {
@@ -2308,7 +2331,7 @@ kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *nam
 	obj_hdl = NULL;
 
 	if (attrs_out != NULL) {
-		posix2fsal_attributes_all(&stat_out, attrs_out);
+		posix2fsal_attributes_all(stat, attrs_out);
 	}
 
 	/* We have already checked permissions in cfs_creat_ex */
