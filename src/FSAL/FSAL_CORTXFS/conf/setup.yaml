@@ -5,6 +5,9 @@ nfs_server:
         config:
                 script: /opt/seagate/cortx/cortx-fs-ganesha/bin/nfs_setup.sh
                 args: config -q
+        restart:
+                script: /opt/seagate/cortx/cortx-fs-ganesha/bin/nfs_setup.sh
+                args: restart -q
         reset:
                 script: /opt/seagate/cortx/cortx-fs-ganesha/bin/nfs_setup.sh
                 args: cleanup -q
