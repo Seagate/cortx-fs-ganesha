@@ -37,9 +37,9 @@ KVSFS_NFS_GANESHA_BUILD_DIR=${KVSFS_NFS_GANESHA_BUILD_DIR:-"$KVSFS_NFS_GANESHA_D
 KVSFS_VERSION=${CORTXFS_VERSION:-"$(cat $KVSFS_SOURCE_ROOT/VERSION)"}
 
 # Select CORTXFS Build Version.
-# Superproject: derived from cortxfs version.
-# Local: taken from git rev.
-KVSFS_BUILD_VERSION=${CORTXFS_BUILD_VERSION:-"$(git rev-parse --short HEAD)"}
+# Taken from git rev of CORTX-FS-GANESHA REPO
+GIT_DIR="$KVSFS_SOURCE_ROOT/.git"
+KVSFS_BUILD_VERSION="$(git --git-dir "$GIT_DIR" rev-parse --short HEAD)"
 
 
 # Optional, CORTX-UTILS source location.
