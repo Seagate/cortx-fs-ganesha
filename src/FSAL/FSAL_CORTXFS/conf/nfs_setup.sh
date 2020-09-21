@@ -264,6 +264,12 @@ function cortx_nfs_init {
 	echo -e "\nNFS Initialization is complete"
 }
 
+function cortx_ganesha_restart {
+	systemctl restart nfs-ganesha || die "Failed to start NFS-Ganesha"
+	
+	echo -e "\nNFS-Ganesha restarted"
+}
+
 function cortx_nfs_config {
 	[ -n "$PROVI_SETUP" ] && get_ep
 
@@ -281,12 +287,16 @@ function cortx_nfs_config {
 	prepare_ganesha_conf
 
 	# Start NFS Ganesha Server
-	systemctl restart nfs-ganesha || die "Failed to start NFS-Ganesha"
-
-	# Create default FS
-	if [ -n "$DEFAULT_FS" ]; then
-		create_fs
+	if [ -n "$PROVI_SETUP" ]; then
+		echo "\nSkipping 'Start NFS-Ganesha Server' for provisioning"
+	else
 		systemctl restart nfs-ganesha || die "Failed to start NFS-Ganesha"
+	
+		# Create default FS
+		if [ -n "$DEFAULT_FS" ]; then
+			create_fs
+			systemctl restart nfs-ganesha || die "Failed to start NFS-Ganesha"
+		fi
 	fi
 
 	echo success > $NFS_INITIALIZED
@@ -384,6 +394,7 @@ case $cmd in
 	init    ) cortx_nfs_init;;
 	config	) cortx_nfs_config;;
 	setup	) cortx_nfs_init; cortx_nfs_config;;
+	restart ) cortx_ganesha_restart;;
 	cleanup ) cortx_nfs_cleanup;;
 	*       ) usage;;
 esac
