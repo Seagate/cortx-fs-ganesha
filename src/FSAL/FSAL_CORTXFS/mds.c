@@ -1138,7 +1138,7 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 			     struct kvsfs_fsal_obj_handle,
 			     obj_handle);
 	// kvsfs_handle = myself->handle;
-	gtbl_layout_rmv_elem(myself->handle);
+	gtbl_layout_rmv_elem((const struct kvsfs_file_handle *)(myself->handle));
 
 	/** @todo: here, add code to actually commit the layout */
 	res->size_supplied = false;

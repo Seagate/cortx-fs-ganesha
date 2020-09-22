@@ -210,7 +210,7 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 	/* write the data */
 	amount_written = cfs_write(kvsfs_fsal_export->cfs_fs, &cred, &fd.cfs_fd,
-				   buffer,(const)write_length, offset);
+				   (void*)buffer,(const)write_length, offset);
 	if (amount_written < 0) {
 		return posix2nfs4_error(-amount_written);
 	}
