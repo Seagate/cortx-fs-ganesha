@@ -1,4 +1,4 @@
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/62e8043f34f642c397ab84bfbe5cba4d)](https://www.codacy.com?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Seagate/efs-ganesha&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/0a902c2fbf9e455f88c61bd0e75fed09)](https://app.codacy.com/gh/Seagate/cortx-fs-ganesha?utm_source=github.com&utm_medium=referral&utm_content=Seagate/cortx-fs-ganesha&utm_campaign=Badge_Grade_Settings)
 
 # CORTXFS-FSAL
 
