@@ -1,5 +1,3 @@
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/62e8043f34f642c397ab84bfbe5cba4d)](https://www.codacy.com?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Seagate/efs-ganesha&amp;utm_campaign=Badge_Grade)
-
 # CORTXFS-FSAL
 
 NFS Ganesha backend for CORTXFS implementation.
