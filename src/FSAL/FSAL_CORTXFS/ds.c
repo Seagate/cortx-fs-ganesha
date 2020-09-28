@@ -204,8 +204,6 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 	/** @todo Add some debug code here about the fh to be used */
 
-	/* @todo: we could take care of parameter stability_wanted here */
-
 	/* @todo: We currently do not have any support for writeverf */
 
 	/* write the data */
@@ -217,7 +215,9 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 
 	*written_length = amount_written;
-	*stability_got = stability_wanted;
+	
+	/* CORTX FS only provides file sync stability, rest are not supported */
+	*stability_got = FILE_SYNC4;
 
 	LogDebug(COMPONENT_PNFS," >> EXIT kvsfs_ds_write\n");
 	return NFS4_OK;
