@@ -10,18 +10,10 @@
 /******************************************************************************/
 /* Common helpers */
 
-static inline void cortxfs_cred_from_op_ctx(cfs_cred_t *out)
-{
-	assert(out);
-	assert(op_ctx);
-
-	out->uid = op_ctx->creds->caller_uid;
-	out->gid = op_ctx->creds->caller_gid;
-}
-
-#define CFS_CRED_INIT_FROM_OP {			\
-	.uid = op_ctx->creds->caller_uid,	\
-	.gid = op_ctx->creds->caller_gid,	\
+#define CFS_CRED_INIT_FROM_OP {					\
+	.uid = op_ctx->creds->caller_uid,			\
+	.gid = op_ctx->creds->caller_gid,			\
+	.total_grps = op_ctx->creds->caller_glen,		\
 }
 
 /******************************************************************************/
