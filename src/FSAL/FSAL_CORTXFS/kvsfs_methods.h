@@ -7,14 +7,6 @@
 #include <gsh_list.h>
 #include <fsal_types.h>
 
-/******************************************************************************/
-/* Common helpers */
-
-#define CFS_CRED_INIT_FROM_OP {					\
-	.uid = op_ctx->creds->caller_uid,			\
-	.gid = op_ctx->creds->caller_gid,			\
-	.total_grps = op_ctx->creds->caller_glen,		\
-}
 
 /******************************************************************************/
 

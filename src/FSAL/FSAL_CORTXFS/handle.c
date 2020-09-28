@@ -244,7 +244,7 @@ static bool kvsfs_fh_is_open(struct kvsfs_fsal_obj_handle *obj)
 /*****************************************************************************/
 /* Copy FSAL attrs into CORTXFS attrs
  */
-static inline void cortxfs_cred_from_op_ctx(cfs_cred_t *out)
+inline void cortxfs_cred_from_op_ctx(cfs_cred_t *out)
 {
 	int i;
 
@@ -252,8 +252,9 @@ static inline void cortxfs_cred_from_op_ctx(cfs_cred_t *out)
 
 	out->uid = op_ctx->creds->caller_uid;
 	out->gid = op_ctx->creds->caller_gid;
-	out->total_grps = op_ctx->creds->caller_glen;
-	for (i=0; i<op_ctx->creds->caller_glen; i++) {
+	out->total_grps = (op_ctx->creds->caller_glen <= CORTXFS_CRED_GRPS) ? \
+			  op_ctx->creds->caller_glen : CORTXFS_CRED_GRPS;
+	for (i = 0; i < out->total_grps; i++) {
 		out->grp_list[i] = op_ctx->creds->caller_garray[i];
 	}
 }
