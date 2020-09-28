@@ -27,7 +27,7 @@
 #define CFS_CONFIG                              "/etc/cortx/cortxfs.conf"
 #define DOMAIN_NAME				"localdomain"
 #define SERIALIZE_BUFFER_DEFAULT_SIZE           2048
-#define STRIPE_UNIT                             "8192"
+#define STRIPE_UNIT                             "1048576"
 #define EXPIRE_TIME_ATTR_DEFAULT                60
 #define EXPIRE_TIME_ATTR_PNFS                   1
 #define DS_PORT                                 "2049"
