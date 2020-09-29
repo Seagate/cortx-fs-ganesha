@@ -124,8 +124,7 @@ kvsfs_ds_read(struct fsal_ds_handle *const ds_pub,
 
 	fd.cfs_fd.ino = kvsfs_fh->kvsfs_handle;
 
-	cred.uid = req_ctx->creds->caller_uid;
-	cred.gid = req_ctx->creds->caller_gid;
+	cortxfs_cred_from_op_ctx(&cred);
 
 	/* read the data */
 	amount_read = cfs_read(kvsfs_fsal_export->cfs_fs, &cred, &fd.cfs_fd,
@@ -199,8 +198,7 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 	memset(writeverf, 0, NFS4_VERIFIER_SIZE);
 
-	cred.uid = req_ctx->creds->caller_uid;
-	cred.gid = req_ctx->creds->caller_gid;
+	cortxfs_cred_from_op_ctx(&cred);
 
 	/** @todo Add some debug code here about the fh to be used */
 
