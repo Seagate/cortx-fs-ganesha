@@ -272,6 +272,24 @@ static bool kvsfs_fh_is_open(struct kvsfs_fsal_obj_handle *obj)
 	return (memcmp(&empty_share, &obj->share, sizeof(empty_share)) != 0);
 }
 
+/*****************************************************************************/
+/* Copy FSAL attrs into CORTXFS attrs
+ */
+inline void cortxfs_cred_from_op_ctx(cfs_cred_t *out)
+{
+	int i;
+
+	assert(out);
+
+	out->uid = op_ctx->creds->caller_uid;
+	out->gid = op_ctx->creds->caller_gid;
+	out->total_grps = (op_ctx->creds->caller_glen <= CORTXFS_CRED_GRPS) ? \
+			  op_ctx->creds->caller_glen : CORTXFS_CRED_GRPS;
+	for (i = 0; i < out->total_grps; i++) {
+		out->grp_list[i] = op_ctx->creds->caller_garray[i];
+	}
+}
+
 /******************************************************************************/
 /* FSAL.lookup */
 static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
@@ -281,10 +299,12 @@ static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 {
 	struct kvsfs_fsal_obj_handle *parent;
 	int rc = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct cfs_fh *object = NULL;
 	struct kvsfs_fsal_export *export =
 	    container_of(op_ctx->fsal_export, struct kvsfs_fsal_export, export);
+
+	cortxfs_cred_from_op_ctx(&cred);
 
 	T_ENTER(">>> (%p, %s)", parent_hdl, name);
 
@@ -330,12 +350,12 @@ fsal_status_t kvsfs_lookup_path(struct fsal_export *exp_hdl,
 {
 	int rc = 0;
 	struct cfs_fh *object = NULL;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct kvsfs_fsal_export *myexport;
 
 	T_ENTER(" >> (%p, %s)", exp_hdl, path);
 	assert(exp_hdl);
-
+	cortxfs_cred_from_op_ctx(&cred);
 	myexport = container_of(op_ctx->fsal_export,
 				struct kvsfs_fsal_export, export);
 
@@ -458,13 +478,14 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 {
 	struct kvsfs_fsal_obj_handle *myself, *hdl;
 	int retval = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	cfs_ino_t object;
 	struct stat *stat = NULL;
 	mode_t unix_mode;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	struct attrlist parent_attrs = {0};
 
+	cortxfs_cred_from_op_ctx(&cred);
 	/* TODO:PERF: Check if it can be converted into an assert pre-cond */
 	if (!fsal_obj_handle_is(dir_hdl, DIRECTORY)) {
 		LogCrit(COMPONENT_FSAL,
@@ -559,12 +580,13 @@ static fsal_status_t kvsfs_makesymlink(struct fsal_obj_handle *dir_hdl,
 {
 	struct kvsfs_fsal_obj_handle *myself, *hdl;
 	int retval = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	cfs_ino_t object;
 	struct stat *stat = NULL;
 	struct fsal_obj_handle *new_hdl = NULL;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	if (!fsal_obj_handle_is(dir_hdl, DIRECTORY)) {
 		LogCrit(COMPONENT_FSAL,
 			"Parent handle is not a directory. hdl = 0x%p",
@@ -643,8 +665,9 @@ static fsal_status_t kvsfs_readsymlink(struct fsal_obj_handle *obj_hdl,
 {
 	struct kvsfs_fsal_obj_handle *myself = NULL;
 	int retval = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	if (!fsal_obj_handle_is(obj_hdl, SYMBOLIC_LINK)) {
 		retval = -EINVAL; /* See RFC7530, 16.25.5 */
 		goto out;
@@ -699,8 +722,9 @@ static fsal_status_t kvsfs_linkfile(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *myself;
 	struct kvsfs_fsal_obj_handle *destdir;
 	int retval = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	myself = container_of(obj_hdl, struct kvsfs_fsal_obj_handle,
 			      obj_handle);
 
@@ -768,12 +792,12 @@ static bool kvsfs_readdir_cb(void *ctx, const char *name,
 	struct fsal_obj_handle *obj;
 	struct kvsfs_fsal_obj_handle *hdl;
 	struct stat *stat = NULL;
-
-	cfs_cred_t cred  = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 
 	assert(cb_ctx != NULL);
 	assert(name != NULL);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	T_ENTER("dentry[%d]=%s, ino=%llu", (int)cb_ctx->where, name,
 		(int)child_ino);
 	/* A small state machine for dir_continue and eof logic:
@@ -831,7 +855,7 @@ static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 
 {
 	struct kvsfs_fsal_obj_handle *obj;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct kvsfs_readdir_cb_ctx readdir_ctx = {
 		/* If whence is NULL, it means we should start from the very
 		 * beginning (dentry[0]).
@@ -853,6 +877,7 @@ static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 	struct cfs_fs *cfs_fs = NULL;
 	int rc;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
 	T_ENTER("parent=%d", (int) *kvsfs_fh_to_ino(obj->handle));
@@ -984,8 +1009,9 @@ static fsal_status_t kvsfs_rename(struct fsal_obj_handle *obj_hdl,
 	struct cfs_rename_flags flags = CFS_RENAME_FLAGS_INIT;
 	fsal_status_t result;
 	int rc = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 	olddir = container_of(olddir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 	newdir = container_of(newdir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
@@ -1166,9 +1192,10 @@ static fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *myself;
 	struct stat stat;
 	int retval = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	fsal_status_t result;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	T_ENTER(">>> (%p)", obj_hdl);
 
 	if (attrs_out == NULL) {
@@ -1302,11 +1329,12 @@ fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *obj;
 	struct stat stats = { 0 };
 	int flags = 0;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 
 	T_ENTER(">>> (obj=%p, bypass=%d, state=%p, attrs=%p)", obj_hdl,
 		bypass, state, attrs);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
 	result = kvsfs_setattr_attrlist2stat(attrs, &stats, &flags);
@@ -1387,11 +1415,12 @@ static fsal_status_t kvsfs_unlink_reg(struct fsal_obj_handle *dir_hdl,
 				      struct fsal_obj_handle *obj_hdl,
 				      const char *name)
 {
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct kvsfs_fsal_obj_handle *parent;
 	struct kvsfs_fsal_obj_handle *obj;
 	int rc;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	parent = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
@@ -1432,11 +1461,12 @@ static fsal_status_t kvsfs_rmsymlink(struct fsal_obj_handle *dir_hdl,
 				     struct fsal_obj_handle *obj_hdl,
 				     const char *name)
 {
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct kvsfs_fsal_obj_handle *parent;
 	struct kvsfs_fsal_obj_handle *obj;
 	int rc;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	parent = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
@@ -1459,10 +1489,11 @@ static fsal_status_t kvsfs_rmdir(struct fsal_obj_handle *dir_hdl,
 				 struct fsal_obj_handle *obj_hdl,
 				 const char *name)
 {
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct kvsfs_fsal_obj_handle *parent;
 	int rc;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	parent = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
 	/* TODO:PERF:
@@ -1633,13 +1664,14 @@ fsal_status_t kvsfs_create_handle(struct fsal_export *exp_hdl,
 	struct kvsfs_fsal_export *myexport;
 	/* FIXME: It is unclear yet if this function is a subject to access
 	 * checks */
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 
 	assert(exp_hdl);
 	assert(hdl_desc);
 	assert(hdl_desc->addr);
 	assert(handle);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	myexport = container_of(op_ctx->fsal_export,
 				struct kvsfs_fsal_export, export);
 
@@ -2096,10 +2128,11 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *obj;
 	int rc = 0;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	struct kvsfs_file_state *fd;
 	struct stat stat;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	fd = &container_of(state, struct kvsfs_state_fd, state)->kvsfs_fd;
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
@@ -2237,7 +2270,7 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 	int rc;
 	struct kvsfs_fsal_obj_handle *parent_obj, *hdl;
 	struct fsal_obj_handle *obj_hdl = NULL;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	cfs_ino_t object;
 	struct stat stat_in;
 	struct stat stat_out;
@@ -2252,6 +2285,7 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 	assert(name != NULL);
 	assert(state && parent_obj_hdl);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	parent_obj = container_of(parent_obj_hdl,
 				  struct kvsfs_fsal_obj_handle, obj_handle);
 
@@ -2325,7 +2359,7 @@ kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *nam
 	int rc;
 	struct kvsfs_fsal_obj_handle *parent_obj, *hdl;
 	struct fsal_obj_handle *obj_hdl = NULL;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	cfs_ino_t object;
 	struct stat stat_in;
 	struct stat stat_out;
@@ -2339,6 +2373,7 @@ kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *nam
 
 	assert(name);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	/* Use ATIME and MTIME attrs as verifiers. */
 	set_common_verifier(attrs_in, verifier);
 
@@ -2819,12 +2854,13 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *obj;
 	struct kvsfs_file_state *fd;
 	uint64_t offset;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	fsal_status_t result;
 	ssize_t nb_read;
 	void *buffer;
 	size_t buffer_size;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	/* We support only NFSv4 clients. kvsfs_open2 won't allow
 	 * an NFSv3 client to open file, therefore we won't end up here
 	 * in this case. Ergo, the following check is an assert precondition
@@ -2924,7 +2960,7 @@ static fsal_status_t kvsfs_ftruncate(struct fsal_obj_handle *obj_hdl,
 	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	struct kvsfs_file_state *fd = NULL;
 	struct kvsfs_fsal_obj_handle *obj = NULL;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	bool special_fd = false;
 
 	T_ENTER0;
@@ -2933,6 +2969,7 @@ static fsal_status_t kvsfs_ftruncate(struct fsal_obj_handle *obj_hdl,
 	assert((new_stat_flags & STAT_SIZE_SET) != 0);
 	assert(obj_hdl->type == REGULAR_FILE);
 
+	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
 	if (state == NULL) {
@@ -3002,13 +3039,14 @@ static void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *obj;
 	struct kvsfs_file_state *fd;
 	uint64_t offset;
-	cfs_cred_t cred = CFS_CRED_INIT_FROM_OP;
+	cfs_cred_t cred;
 	fsal_status_t result;
 	ssize_t nb_write;
 	void *buffer;
 	size_t buffer_size;
 	int rc;
 
+	cortxfs_cred_from_op_ctx(&cred);
 	/* TODO: A temporary solution for keeping metadata (stat) consistent.
 	 * The lock allows us to serialize all WRITE requests ensuring
 	 * that stat is always updated in accordance with the amount

@@ -185,8 +185,7 @@ int external_unlink(struct fsal_obj_handle *dir_hdl,
 	myself = container_of(dir_hdl, struct kvsfs_fsal_obj_handle,
 			      obj_handle);
 
-	cred.uid = op_ctx->creds->caller_uid;
-	cred.gid = op_ctx->creds->caller_gid;
+	cortxfs_cred_from_op_ctx(&cred);
 
 	rc = cortxfs_lookup(&cred, &myself->handle->kvsfs_handle,
 			    (char *)name, &object);
