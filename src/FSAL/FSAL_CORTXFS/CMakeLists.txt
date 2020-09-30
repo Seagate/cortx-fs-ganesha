@@ -65,6 +65,13 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I${CAPIINC}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-unused-variable")
 
+# Turns on ADDB-based TDSB wrappers.
+# When this flag is disabled, perfc TSDB code will be turned off.
+# When this flag is enabled, the utils module has to be
+# compiled with this flag enabled otherwise some of
+# the function calls will be undefined.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_TSDB_ADDB")
+
 # TODO: Wrap this with a check against build type
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3 -fPIC")
 # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-all")

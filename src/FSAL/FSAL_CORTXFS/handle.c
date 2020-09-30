@@ -66,11 +66,42 @@
 #include <cortxfs_fh.h>
 #include <nfs_exports.h> /* EXPORT_OPTION_DISABLE_ACL */
 #include <debug.h>	/* dassert */
+#include "operation.h"
 
 #include <../FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_int.h>
 #include <../FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_hash.h>
 
 /******************************************************************************/
+
+/**
+ * CORTXFS PERF ENH:
+ * Adding support for read2 
+ * TODO: Similar change will be needed for rest of the FSAL handlers
+ **/
+
+typedef void (*cortxfs_fsal_read)(struct fsal_obj_handle *obj_hdl,
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *read_arg,
+			void *caller_arg);
+
+static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *read_arg,
+			void *caller_arg);
+
+static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
+			 bool bypass,
+			 fsal_async_cb done_cb,
+			 struct fsal_io_arg *read_arg,
+			 void *caller_arg);
+
+cortxfs_fsal_read cortxfs_fsal_reads[2] = {
+	kvsfs_read2,
+	kvsfs_perf_op_read2
+};
+
 /* Internal data types */
 
 /** KVSFS version of a file state object.
@@ -2850,6 +2881,11 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 		(unsigned long long) read_arg->iov_count,
 		(unsigned long long) read_arg->iov[0].iov_len);
 
+	perfc_trace_state(PES_GEN_INIT);
+	perfc_trace_attr(PEA_R_OFFSET, read_arg->offset);
+	perfc_trace_attr(PEA_R_IOVC, read_arg->iov_count);
+	perfc_trace_attr(PEA_R_IOVL, read_arg->iov[0].iov_len);
+
 	/* NFS Ganesha uses only a single buffer so far. */
 	assert(read_arg->iov_count == 1);
 
@@ -2877,8 +2913,28 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 
 	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 out:
+	perfc_trace_attr(PEA_R_RES_MAJ, result.major);
+	perfc_trace_attr(PEA_R_RES_MIN, result.minor);
+	perfc_trace_state(PES_GEN_FINI);
+
 	T_EXIT0(result.major);
 	done_cb(obj_hdl, result, read_arg, caller_arg);
+}
+
+/**
+ * This is just a wrapper of kvsfs_read2 with added support for TSDB
+ * for monitoring performance
+ */
+static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
+			 bool bypass,
+			 fsal_async_cb done_cb,
+			 struct fsal_io_arg *read_arg,
+			 void *caller_arg)
+{
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_READ);
+	kvsfs_read2(obj_hdl, bypass, done_cb, read_arg, caller_arg);
+	perfc_tls_fini();
 }
 
 /******************************************************************************/
@@ -3075,9 +3131,20 @@ static fsal_status_t kvsfs_commit2(struct fsal_obj_handle *obj_hdl,
 }
 
 /******************************************************************************/
+
 void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 {
+	uint8_t enable_mon = 0;
+	int rc; 
+
+	rc = pthread_key_create(&perfc_tls_key, NULL);
+	dassert(rc == 0);
+
 	fsal_default_obj_ops_init(ops);
+
+#ifdef ENABLE_TSDB_ADDB
+	enable_mon = 1;
+#endif /* ENABLE_TSDB_ADDB */
 
 	// Namespace
 	ops->release = release;
@@ -3107,7 +3174,7 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 	ops->reopen2 = kvsfs_reopen2;
 
 	// File IO
-	ops->read2 = kvsfs_read2;
+	ops->read2 = cortxfs_fsal_reads[enable_mon];
 	ops->write2 = kvsfs_write2;
 	ops->commit2 = kvsfs_commit2;
 
