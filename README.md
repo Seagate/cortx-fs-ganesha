@@ -1,17 +1,13 @@
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/0a902c2fbf9e455f88c61bd0e75fed09)](https://app.codacy.com/gh/Seagate/cortx-fs-ganesha?utm_source=github.com&utm_medium=referral&utm_content=Seagate/cortx-fs-ganesha&utm_campaign=Badge_Grade_Settings)
 
-# CORTXFS-FSAL
+# CORTX-FS-Ganesha
 
-NFS Ganesha backend for CORTXFS implementation.
+The CORTX-FS-Ganesha is the backend for CORTXFS implementation. The FSAL (Filesystem Abstraction Layer) implements the NFS-Ganesha FSAL-API based on CORTX-FS as the underlying filesystem.
 
-The FSAL (Filesystem Abstraction Layer) implements
-NFS Ganesha FSAL API based on CORTXFS as an underlying filesystem.
+**See also:**
 
-See also:
-
-* Top level repo: https://github.com/Seagate/cortx-posix.git
-* NFS Ganesha repo: https://github.com/Seagate/nfs-ganesha.git
-
+* [Top level repository](https://github.com/Seagate/cortx-posix.git)
+* [NFS Ganesha repository](https://github.com/Seagate/nfs-ganesha.git)
 
 ### Disclaimer
 Please refer to the shared disclaimer (https://github.com/Seagate/cortx-posix#disclaimer) about this code repository.
@@ -19,7 +15,7 @@ Please refer to the shared disclaimer (https://github.com/Seagate/cortx-posix#di
 ### Build and Install
 For build and install related steps please refer to [CORTX-POSIX Quick Start Guide](https://github.com/Seagate/cortx-posix/blob/main/doc/CortxPosixQuickStart.md)
 
-### Contribute to CORTXFS-FSAL
+### Contribute to CORTXFS-FS-Gaesha
 
 We are excited about your interest in CORTX and hope you will join us. We take our community very seriously, and we are committed to creating a community built on respectful interactions and inclusivity, as documented in our [Code of conduct](CODE_OF_CONDUCT.md).
 
