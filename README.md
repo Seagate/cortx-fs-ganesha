@@ -10,7 +10,7 @@ The CORTX-FS-Ganesha is the backend for CORTXFS implementation. The FSAL (Filesy
 * [NFS Ganesha repository](https://github.com/Seagate/nfs-ganesha.git)
 
 ### Disclaimer
-Please refer to the shared disclaimer (https://github.com/Seagate/cortx-posix#disclaimer) about this code repository.
+Please refer to the shared [disclaimer](https://github.com/Seagate/cortx-posix#disclaimer) about this code repository.
 
 ### Build and Install
 For build and install related steps please refer to [CORTX-POSIX Quick Start Guide](https://github.com/Seagate/cortx-posix/blob/main/doc/CortxPosixQuickStart.md)
