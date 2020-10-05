@@ -2,7 +2,7 @@
 
 # CORTX-FS-Ganesha
 
-The CORTX-FS-Ganesha is the backend for CORTXFS implementation. The FSAL (Filesystem Abstraction Layer) implements the NFS-Ganesha FSAL-API based on CORTX-FS as the underlying filesystem.
+The CORTX-FS-GANESHA submodule provides the FSAL code for CORTX-FS that is used by the CORTX-NFS-Ganesha repository. In other words, CORTX-FS-Ganesha is the backend for CORTX-FS implementation. The FSAL (Filesystem Abstraction Layer) implements the NFS-Ganesha FSAL-API based on CORTX-FS as the underlying filesystem.
 
 **See also:**
 
@@ -15,7 +15,7 @@ Please refer to the shared [disclaimer](https://github.com/Seagate/cortx-posix#d
 ### Build and Install
 For build and install related steps please refer to [CORTX-POSIX Quick Start Guide](https://github.com/Seagate/cortx-posix/blob/main/doc/CortxPosixQuickStart.md)
 
-### Contribute to CORTXFS-FS-Gaesha
+### Contribute to CORTXFS-FS-Ganesha
 
 We are excited about your interest in CORTX and hope you will join us. We take our community very seriously, and we are committed to creating a community built on respectful interactions and inclusivity, as documented in our [Code of conduct](CODE_OF_CONDUCT.md).
 
@@ -28,4 +28,4 @@ Refer to the [CORTX Contribution Guide](CONTRIBUTING.md) that hosts all informat
 
 ## Thank You!
 
-We thank you for stopping by to check out the CORTX Community. Seagate is fully dedicated to its mission to build open source technologies that help the world save unlimited data and solve challenging data problems. Join our mission to help reinvent a data-driven world.
+We thank you for stopping by to check out the CORTX Community. We are fully dedicated to our mission to build open source technologies that help the world save unlimited data and solve challenging data problems. Join our mission to help reinvent a data-driven world.
