@@ -1,8 +1,8 @@
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/0a902c2fbf9e455f88c61bd0e75fed09)](https://app.codacy.com/gh/Seagate/cortx-fs-ganesha?utm_source=github.com&utm_medium=referral&utm_content=Seagate/cortx-fs-ganesha&utm_campaign=Badge_Grade_Settings)
 
-# CORTX-FS-Ganesha
+# CORTXFS-Ganesha
 
-The CORTX-FS-GANESHA submodule provides the FSAL code for CORTX-FS that is used by the CORTX-NFS-Ganesha repository. In other words, CORTX-FS-Ganesha is the backend for CORTX-FS implementation. The FSAL (Filesystem Abstraction Layer) implements the NFS-Ganesha FSAL-API based on CORTX-FS as the underlying filesystem.
+The CORTXFS-GANESHA repository provides the FSAL code for CORTXFS that is used by the CORTX-NFS-Ganesha repository. In other words, CORTXFS-Ganesha is the backend for CORTXFS implementation. The FSAL (Filesystem Abstraction Layer) implements the NFS-Ganesha FSAL-API based on CORTXFS as the underlying filesystem.
 
 **See also:**
 
