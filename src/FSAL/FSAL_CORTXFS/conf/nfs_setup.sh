@@ -285,12 +285,6 @@ function cortx_nfs_init {
 	echo -e "\nNFS Initialization is complete"
 }
 
-function cortx_ganesha_restart {
-	systemctl restart nfs-ganesha || die "Failed to start NFS-Ganesha"
-	
-	echo -e "\nNFS-Ganesha restarted"
-}
-
 function cortx_nfs_config {
 	[ -n "$PROVI_SETUP" ] && get_ep
 
@@ -325,6 +319,65 @@ function cortx_nfs_config {
 
 	echo success > $NFS_INITIALIZED
 	echo -e "\nNFS setup is complete"
+}
+
+function cortx_ganesha_restart {
+	echo -e "\nStopping NFS Ganesha"
+	systemctl stop nfs-ganesha || die "Failed to stop NFS-Ganesha"
+
+	echo -e "\nUpdating conf file"
+        cat >> $GANESHA_CONF << EOM
+# An example of KVSFS NFS Export
+EXPORT {
+
+        # Export Id (mandatory, each EXPORT must have a unique Export_Id)
+        Export_Id = 12345;
+
+        # Exported path (mandatory)
+        Path = $FS_PATH;
+
+        # Pseudo Path (required for NFSv4 or if mount_path_pseudo = true)
+        Pseudo = /$FS_PATH;
+
+        # Exporting FSAL
+        FSAL {
+                Name  = CORTX-FS;
+                cortxfs_config = $CORTXFS_CONF;
+
+                PNFS {
+                        Stripe_Unit = 8192;
+                        pnfs_enabled = $pNFS_ENABLED;
+                        Nb_Dataserver = 1;
+                        DS1 {
+                                DS_Addr = $pNFS_DATA_SERVER;
+                                DS_Port = 2049;
+                        }
+                }
+        }
+
+        # Allowed security types for this export
+        SecType = sys;
+
+        Filesystem_id = 192.168;
+
+        client {
+                clients = *;
+
+                # Whether to squash various users.
+                Squash=no_root_squash;
+
+                # Access type for clients.  Default is None, so some access must be
+                # given. It can be here, in the EXPORT_DEFAULTS, or in a CLIENT block
+                access_type=RW;
+
+                # Restrict the protocols that may use this export.  This cannot allow
+                # access that is denied in NFS_CORE_PARAM.
+                protocols = 4;
+        }
+}
+EOM
+	echo -e "\nStarting NFS Ganesha"
+	systemctl start nfs-ganesha || die "Failed to start NFS-Ganesha"
 }
 
 function cortx_nfs_cleanup {
