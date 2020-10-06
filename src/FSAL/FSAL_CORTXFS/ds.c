@@ -124,8 +124,7 @@ kvsfs_ds_read(struct fsal_ds_handle *const ds_pub,
 
 	fd.cfs_fd.ino = kvsfs_fh->kvsfs_handle;
 
-	cred.uid = req_ctx->creds->caller_uid;
-	cred.gid = req_ctx->creds->caller_gid;
+	cortxfs_cred_from_op_ctx(&cred);
 
 	/* read the data */
 	amount_read = cfs_read(kvsfs_fsal_export->cfs_fs, &cred, &fd.cfs_fd,
@@ -199,12 +198,9 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 	memset(writeverf, 0, NFS4_VERIFIER_SIZE);
 
-	cred.uid = req_ctx->creds->caller_uid;
-	cred.gid = req_ctx->creds->caller_gid;
+	cortxfs_cred_from_op_ctx(&cred);
 
 	/** @todo Add some debug code here about the fh to be used */
-
-	/* @todo: we could take care of parameter stability_wanted here */
 
 	/* @todo: We currently do not have any support for writeverf */
 
@@ -217,7 +213,9 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 
 	*written_length = amount_written;
-	*stability_got = stability_wanted;
+	
+	/* CORTX FS only provides file sync stability, rest are not supported */
+	*stability_got = FILE_SYNC4;
 
 	LogDebug(COMPONENT_PNFS," >> EXIT kvsfs_ds_write\n");
 	return NFS4_OK;
