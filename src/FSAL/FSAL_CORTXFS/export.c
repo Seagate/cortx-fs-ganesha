@@ -38,46 +38,8 @@
 #include "fsal_internal.h"
 #include "kvsfs_methods.h"
 #include "cortxfs.h"
-
+#include "nfs_exports.h"
 extern struct kvsfs_fsal_module KVSFS;
-
-static struct config_item ds_array_params[] = {
-	CONF_MAND_IP_ADDR("DS_Addr", "127.0.0.1",
-			  kvsfs_pnfs_ds_parameter, ipaddr),
-	CONF_MAND_UI16("DS_Port", 1024, UINT16_MAX, 2049,
-		       kvsfs_pnfs_ds_parameter, ipport), /* default is nfs */
-	CONFIG_EOL
-};
-
-static struct config_item pnfs_params[] = {
-	CONF_MAND_UI32("Stripe_Unit", 8192, 1024*1024, 1024,
-		       kvsfs_exp_pnfs_parameter, stripe_unit),
-	CONF_ITEM_BOOL("pnfs_enabled", false,
-		       kvsfs_exp_pnfs_parameter, pnfs_enabled),
-
-	CONF_MAND_UI32("Nb_Dataserver", 1, 4, 1,
-		       kvsfs_exp_pnfs_parameter, nb_ds),
-
-	CONF_ITEM_BLOCK("DS1", ds_array_params,
-			noop_conf_init, noop_conf_commit,
-			kvsfs_exp_pnfs_parameter, ds_array[0]),
-
-	CONF_ITEM_BLOCK("DS2", ds_array_params,
-			noop_conf_init, noop_conf_commit,
-			kvsfs_exp_pnfs_parameter, ds_array[1]),
-
-	CONF_ITEM_BLOCK("DS3", ds_array_params,
-			noop_conf_init, noop_conf_commit,
-			kvsfs_exp_pnfs_parameter, ds_array[2]),
-
-	CONF_ITEM_BLOCK("DS4", ds_array_params,
-			noop_conf_init, noop_conf_commit,
-			kvsfs_exp_pnfs_parameter, ds_array[3]),
-	CONFIG_EOL
-
-};
-
-
 static int kvsfs_conf_pnfs_commit(void *node,
 				  void *link_mem,
 				  void *self_struct,
@@ -87,9 +49,6 @@ static struct config_item export_params[] = {
 	CONF_ITEM_NOOP("name"),
 	CONF_ITEM_STR("cortxfs_config", 0, MAXPATHLEN, NULL,
 		      kvsfs_fsal_export, cfs_config),
-	CONF_ITEM_BLOCK("PNFS", pnfs_params,
-			noop_conf_init, kvsfs_conf_pnfs_commit,
-			kvsfs_fsal_export, pnfs_param),
 	CONFIG_EOL
 };
 
@@ -122,6 +81,7 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 	int retval = 0;
 	fsal_errors_t fsal_error = ERR_FSAL_INVAL;
 	struct cfs_fs *cfs_fs = NULL;
+	uint8_t pnfs_role; 
 
 	uint16_t fsid =	op_ctx->ctx_export->export_id;
 	LogEvent(COMPONENT_FSAL, "export id %d", (int)fsid);
@@ -130,8 +90,8 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 
 	fsal_export_init(&myself->export);
 	kvsfs_export_ops_init(&myself->export.exp_ops);
+	
 	myself->export.up_ops = up_ops;
-
 	retval = load_config_from_node(parse_node,
 				       &export_param,
 				       myself,
@@ -141,6 +101,9 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 		status = fsalstat(fsal_error, retval);
 		goto errout;
 	}
+	
+	/* Get the pNFS Role */
+	pnfs_role = get_pnfs_role(&KVSFS);
 
 	retval = cfs_fs_open(op_ctx->ctx_export->fullpath, &cfs_fs);
 	if (retval != 0) {
@@ -163,14 +126,16 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 
 	op_ctx->fsal_export = &myself->export;
 
-	myself->pnfs_ds_enabled =
-	    myself->export.exp_ops.fs_supports(&myself->export,
-					    fso_pnfs_ds_supported) &&
-					    myself->pnfs_param.pnfs_enabled;
-	myself->pnfs_mds_enabled =
-	    myself->export.exp_ops.fs_supports(&myself->export,
-					    fso_pnfs_mds_supported) &&
-					    myself->pnfs_param.pnfs_enabled;
+	if ( pnfs_role == CORTXFS_PNFS_DS || pnfs_role == CORTXFS_PNFS_BOTH ) {
+		myself->pnfs_ds_enabled = myself->export.exp_ops.fs_supports(&myself->export,
+					  fso_pnfs_ds_supported);
+	}
+
+
+	if ( pnfs_role == CORTXFS_PNFS_MDS || pnfs_role == CORTXFS_PNFS_BOTH ) {
+		myself->pnfs_mds_enabled = myself->export.exp_ops.fs_supports(&myself->export,
+					   fso_pnfs_mds_supported);
+	}
 
 	myself->cfs_fs = cfs_fs;
 	myself->fs_id = fsid;
@@ -199,23 +164,17 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 			goto err_locked;
 		}
 
-		LogInfo(COMPONENT_FSAL,
+		LogCrit(COMPONENT_FSAL,
 			"kvsfs_fsal_create: pnfs DS was enabled for [%s]",
 			op_ctx->ctx_export->fullpath);
 	}
 
 	if (myself->pnfs_mds_enabled) {
-		LogInfo(COMPONENT_FSAL,
+		LogCrit(COMPONENT_FSAL,
 			"kvsfs_fsal_create: pnfs MDS was enabled for [%s]",
 			op_ctx->ctx_export->fullpath);
 		export_ops_pnfs(&myself->export.exp_ops);
       		fsal_ops_pnfs(&myself->export.fsal->m_ops);
-	}
-
-	retval = kvsfs_pmds_update_exp(&KVSFS , myself);
-	if (retval != 0) {
-		LogMajor(COMPONENT_FSAL, "kvsfs_pmds_update_exp failed");
-		goto errout;
 	}
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
