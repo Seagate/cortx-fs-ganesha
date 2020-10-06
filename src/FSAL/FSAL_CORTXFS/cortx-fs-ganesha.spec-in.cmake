@@ -39,10 +39,10 @@ mkdir -p %{buildroot}%{_fsal_ganesha_bin_dir}
 mkdir -p %{buildroot}%{_libdir}/ganesha/
 mkdir -p %{buildroot}%{_nfs_conf_dir}
 cd %{_lib_path}
-install -m 755 lib%{_fsal_ganesha_lib}.so* %{buildroot}%{_fsal_ganesha_lib_dir}
-install -m 755 %{_nfs_setup_dir}/nfs_setup.sh %{buildroot}%{_fsal_ganesha_bin_dir}
-install -m 755 %{_nfs_setup_dir}/nfs_setup_legacy.sh %{buildroot}%{_fsal_ganesha_bin_dir}
-install -m 664 %{_nfs_setup_dir}/setup.yaml %{buildroot}%{_nfs_conf_dir}
+install -m 755 lib%{_fsal_ganesha_lib}.so* "%{buildroot}%{_fsal_ganesha_lib_dir}"
+install -m 755 "%{_nfs_setup_dir}/nfs_setup.sh" "%{buildroot}%{_fsal_ganesha_bin_dir}"
+install -m 755 "%{_nfs_setup_dir}/nfs_setup_legacy.sh" "%{buildroot}%{_fsal_ganesha_bin_dir}"
+install -m 664 "%{_nfs_setup_dir}/setup.yaml" "%{buildroot}%{_nfs_conf_dir}"
 ln -s %{_fsal_ganesha_lib_dir}/lib%{_fsal_ganesha_lib}.so.4.2.0 %{buildroot}%{_libdir}/ganesha/libfsal%{_fs_lib}.so.4.2.0
 ln -s %{_fsal_ganesha_lib_dir}/lib%{_fsal_ganesha_lib}.so.4 %{buildroot}%{_libdir}/ganesha/libfsal%{_fs_lib}.so.4
 ln -s %{_fsal_ganesha_lib_dir}/lib%{_fsal_ganesha_lib}.so %{buildroot}%{_libdir}/ganesha/libfsal%{_fs_lib}.so
