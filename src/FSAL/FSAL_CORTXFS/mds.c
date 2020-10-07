@@ -1,6 +1,6 @@
 /*
  * Filename:         mds.c
- * Description:      FSAL KVSFS's pNFS MetaData Server operations
+ * Description:      FSAL CORTXFS's pNFS MetaData Server operations
 
  * Do NOT modify or remove this copyright and confidentiality notice!
  * Copyright (c) 2020, Seagate Technology, LLC.
@@ -10,7 +10,7 @@
  * authorized is prohibited. All other rights are expressly reserved by
  * Seagate Technology, LLC.
 
- This file contains KVSFS's pNFS MDS implementation
+ This file contains CORTXFS's pNFS MDS implementation
 */
 
 /*
@@ -60,8 +60,11 @@
 #include "pnfs_utils.h"
 #include <stdbool.h>
 #include <arpa/inet.h>
+#include <ini_config.h>
 
-/* Wrappers for KVSFS handle debug traces. Enable this "#if" if you want
+#define CONF_FILE "/etc/ganesha/pNFS.conf"
+
+/* Wrappers for CORTXFS handle debug traces. Enable this "#if" if you want
  * to get traces even without enabled DEBUG logging level, i.e. if you want to
  * see only debug logs from this module.
  */
@@ -104,40 +107,34 @@ extern struct kvsfs_fsal_module KVSFS;
 
 #define SUPPORTED_LAYOUT_DA_ADDR_SIZE 0x1400U
 
-#define KVSFS_PNFS_MIN_STRIPE_COUNT 1U
-#define KVSFS_PNFS_MAX_HOST_COUNT 3U
+#define CORTXFS_PNFS_MIN_STRIPE_COUNT 1U
+#define CORTXFS_PNFS_MAX_HOST_COUNT 3U
 
+#define CORTXFS_PNFS_STRIPE_UNIT 0x100000
 /**
  * 1. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_DISABLED:
  * 	kvsfs_fsal_obj_handle.mds_ctx == NULL
  *
  * 2. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_MDS:
  * 	kvsfs_fsal_obj_handle.mds_ctx != NULL
- * 	kvsfs_pnfs_mds_ctx.num_ds >= 0
- * 	kvsfs_pnfs_mds_ctx.num_ds reflects no. of nodes in
- * 		kvsfs_pnfs_mds_ctx.mds_ds_list
+ * 	cortxfs_pnfs_mds_ctx.NumDataServers >= 0
+ * 	cortxfs_pnfs_mds_ctx.NumDataServers reflects no. of nodes in
+ * 		cortxfs_pnfs_mds_ctx.mds_ds_list
  *
  * 3. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_DS:
  * 	kvsfs_fsal_obj_handle.mds_ctx == NULL
  *
  * 4. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_BOTH:
  * 	conditions for 2 applicable, addition to that:
- * 	kvsfs_pnfs_mds_ctx.mds_ds_list must have atleast one elem, i.e. self
+ * 	cortxfs_pnfs_mds_ctx.mds_ds_list must have atleast one elem, i.e. self
  */
 
-enum kvsfs_pNFS_server_role {
-	KVSFS_PNFS_DISABLED = 0,
-	KVSFS_PNFS_DS,
-	KVSFS_PNFS_MDS,
-	KVSFS_PNFS_BOTH
-};
-
-struct kvsfs_pnfs_ds_addr {
+struct cortxfs_pnfs_ds_addr {
 	uint16_t ds_addr_id;
 	uint16_t ds_addr_ref;
 	in_port_t ds_ip_port;
-	sockaddr_t ds_ip_addr;
-	LIST_ENTRY(kvsfs_pnfs_ds_addr) ds_addr_link;
+	struct sockaddr_in ds_ip_addr;
+	LIST_ENTRY(cortxfs_pnfs_ds_addr) ds_addr_link;
 };
 
 /**
@@ -146,24 +143,24 @@ struct kvsfs_pnfs_ds_addr {
  * deletion. Same is applicable for 'ds_addr_ref' as well.
  * 'ds_id, ds_ref, ds_addr_id and ds_addr_ref' are for future use.
  */
-struct kvsfs_pnfs_ds_info {
+struct cortxfs_pnfs_ds_info {
 	uint16_t ds_id;
 	uint16_t ds_ref;
-	LIST_HEAD(kvsfs_pnfs_ds_addr_list, kvsfs_pnfs_ds_addr) ds_addr_list;
-	LIST_ENTRY(kvsfs_pnfs_ds_info) ds_link;
+	LIST_HEAD(cortxfs_pnfs_ds_addr_list, cortxfs_pnfs_ds_addr) ds_addr_list;
+	LIST_ENTRY(cortxfs_pnfs_ds_info) ds_link;
 };
 
-struct kvsfs_pnfs_mds_info {
+struct cortxfs_pnfs_mds_info {
 	uint32_t stripe_unit;
-	LIST_HEAD(kvsfs_pnfs_ds_info_list, kvsfs_pnfs_ds_info) mds_ds_list;
-	uint16_t num_ds;
-	struct kvsfs_pnfs_ds_info *mds_next_ds;
+	LIST_HEAD(cortxfs_pnfs_ds_info_list, cortxfs_pnfs_ds_info) mds_ds_list;
+	uint16_t NumDataServers;
+	struct cortxfs_pnfs_ds_info *mds_next_ds;
 };
 
-struct kvsfs_pnfs_mds_ctx {
+struct cortxfs_pnfs_mds_ctx {
 	uint32_t pnfs_role;
 	pthread_mutex_t mds_mutex;
-	struct kvsfs_pnfs_mds_info *mds;
+	struct cortxfs_pnfs_mds_info *mds;
 };
 
 // TODO: We should use cortxfs_gtbl_elm_layout in future instead of kvsfs_file_handle
@@ -180,7 +177,19 @@ struct cortxfs_gtbl_elm_layout {
  * @brief Start a layout by updating global table CORTXFS_GTBL_STATE_LAYOUTS
  *        Also used to detect conflicts.
  *
- * @param[in]  fh         KVSFS file handle on which layout is requested
+ * @param[in]  kvsfs  pointer to kvsfs fsal
+ * @return pnfs role
+ */
+inline uint8_t get_pnfs_role(struct kvsfs_fsal_module *kvsfs)
+{
+	return kvsfs->mds_ctx->pnfs_role;
+}
+
+/**
+ * @brief Start a layout by updating global table CORTXFS_GTBL_STATE_LAYOUTS
+ *        Also used to detect conflicts.
+ *
+ * @param[in]  fh         CORTXFS file handle on which layout is requested
  * @return nfsstat4, 0 if success, else error value
  * TODO: In future when the global open tables are completely implemented
  *       and multiple layout to different regions of a same file object
@@ -215,7 +224,7 @@ static nfsstat4 gtbl_layout_add_elem(const struct kvsfs_file_handle *fh)
  * @brief Try to remove a layout by updating global table
  *        CORTXFS_GTBL_STATE_LAYOUTS
  *
- * @param[in]  fh         KVSFS file handle on which layout is expected 
+ * @param[in]  fh         CORTXFS file handle on which layout is expected 
  * @return void
  */
 
@@ -232,74 +241,6 @@ void gtbl_layout_rmv_elem(const struct kvsfs_file_handle *fh)
 	gsh_free(lt_fh);
 }
 
-
-/**
- * @brief Initialize the KVSFS FSAL's global pNFS config, must be called only
- * once while FSAL loads/starts
- *
- * @param[in]  kvsfs         KVSFS FSAL's global context
- * @param[in]  kvsfs_params  Config from cortx.conf
- * @param[out] kvsfs         pNFS config created and updated if available
- *
- * @return 0 if success, else negative error value
- */
-
-
-int kvsfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
-		   const struct config_item *kvsfs_params)
-{
-	int rc = 0;
-	struct kvsfs_pnfs_mds_ctx *mds_ctx;
-
-	dassert(kvsfs != NULL);
-	dassert(kvsfs_params != NULL);
-	dassert(kvsfs->mds_ctx == NULL);
-
-	/** 
-	 * TODO: When the pNFS config is moved to cortx.conf file, process
-	 * kvsfs_params here and update kvsfs->pnfs_role and
-	 * kvsfs->mds_ctx. Until then, just initialize kvsfs->mds_ctx.
-	 * In future, initialize only if pnfs_role > KVSFS_PNFS_DS.
-	 */
-	mds_ctx = gsh_calloc(1, sizeof(*mds_ctx));
-	if (mds_ctx == NULL) {
-		LogCrit(COMPONENT_PNFS,
-			"gsh_calloc failed: %u", sizeof(*mds_ctx->mds));
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	mds_ctx->pnfs_role = KVSFS_PNFS_DISABLED;
-	mds_ctx->mds = gsh_calloc(1, sizeof(struct kvsfs_pnfs_mds_info));
-	if (mds_ctx->mds == NULL) {
-		LogCrit(COMPONENT_PNFS,
-			"gsh_calloc failed: %u", sizeof(*mds_ctx->mds));
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	rc = pthread_mutex_init(&mds_ctx->mds_mutex, NULL);
-	if (rc != 0) {
-		LogCrit(COMPONENT_PNFS,
-			"pthread_mutex_init failed: %x", rc);
-		goto out;
-	}
-
-	LIST_INIT(&mds_ctx->mds->mds_ds_list);
-
-out:
-	if (rc != 0) {
-		if (mds_ctx) {
-			gsh_free(mds_ctx->mds);
-		}
-		gsh_free(mds_ctx);
-	} else {
-		kvsfs->mds_ctx = mds_ctx;
-	}
-
-	return rc;
-}
-
 /**
  * @brief Cleanup the MDS context (private helper)
  *
@@ -307,10 +248,10 @@ out:
  * @return void
  */
 
-static void kvsfs_pmds_cleanup(struct kvsfs_pnfs_mds_info *mds)
+static void cortxfs_pmds_cleanup(struct cortxfs_pnfs_mds_info *mds)
 {
-	struct kvsfs_pnfs_ds_info *ds;
-	struct kvsfs_pnfs_ds_addr *ds_addr;
+	struct cortxfs_pnfs_ds_info *ds;
+	struct cortxfs_pnfs_ds_addr *ds_addr;
 
 	dassert(mds != NULL);
 
@@ -336,17 +277,212 @@ static void kvsfs_pmds_cleanup(struct kvsfs_pnfs_mds_info *mds)
 	gsh_free(mds);
 }
 
+
+
 /**
- * @brief De-initialize the KVSFS FSAL's global pNFS config, must be called only
+ * @brief Initialize the CORTXFS FSAL's global pNFS config, must be called only
+ * once while FSAL loads/starts
+ *
+ * @param[in]  kvsfs         CORTXFS FSAL's global context
+ * @param[in]  kvsfs_params  Config from cortx.conf
+ * @param[out] kvsfs         pNFS config created and updated if available
+ *
+ * @return 0 if success, else negative error value
+ */
+
+
+int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
+		   const struct config_item *kvsfs_params)
+{
+	int rc = 0;
+	struct cortxfs_pnfs_mds_ctx *mds_ctx;
+	struct cortxfs_pnfs_ds_info *ds;
+	struct cortxfs_pnfs_ds_addr *ds_addr;
+
+	static struct collection_item *cfg_items;
+	static struct collection_item *items=NULL;
+	static struct collection_item *errors=NULL;
+	char *pNFS_role=NULL;
+	int NumDataServers;
+	
+	char DS_List[256],tmp[256];
+	char *DS_Info,*port,*ipaddr;
+	int i;		
+
+	dassert(kvsfs != NULL);
+	dassert(kvsfs_params != NULL);
+	dassert(kvsfs->mds_ctx == NULL);
+
+	mds_ctx = gsh_calloc(1, sizeof(*mds_ctx));
+	if (mds_ctx == NULL) {
+		LogCrit(COMPONENT_PNFS,
+			"gsh_calloc failed: %u", sizeof(*mds_ctx));
+		rc = -ENOMEM;
+		goto out;
+	}
+
+
+	/* Read the pNFS.conf file */
+	rc = config_from_file("libcortxfs", CONF_FILE, &cfg_items,INI_STOP_ON_ERROR, &errors);
+	if(rc) {
+			free_ini_config_errors(errors);
+			rc = -rc;
+			LogCrit(COMPONENT_PNFS,"Error reading the pNFS config file\n");
+			goto out;
+	} 
+
+	/* Read the configuration parameters */
+	rc = get_config_item("pNFS","pNFS_role",cfg_items, &items);
+	if (items==NULL) {
+		LogCrit(COMPONENT_PNFS,"pNFS parameters configured incorrectly\n");
+		rc = -rc;
+		goto out; 
+	}
+	pNFS_role = get_string_config_value(items, NULL);
+	if (strncmp(pNFS_role,"MDS",sizeof("MDS")) == 0) {
+		mds_ctx->pnfs_role = CORTXFS_PNFS_MDS;
+	} 
+	else if (strncmp(pNFS_role,"DS",sizeof("DS")) == 0) { 
+		mds_ctx->pnfs_role = CORTXFS_PNFS_DS;
+	}
+	else if (strncmp(pNFS_role,"BOTH",sizeof("BOTH")) == 0) {
+		mds_ctx->pnfs_role = CORTXFS_PNFS_BOTH;
+	}
+	else {
+		mds_ctx->pnfs_role = CORTXFS_PNFS_DISABLED;
+	}
+	
+	
+	if (mds_ctx->pnfs_role > CORTXFS_PNFS_DS )
+	{	
+		mds_ctx->mds = gsh_calloc(1, sizeof(struct cortxfs_pnfs_mds_info));
+		if (mds_ctx->mds == NULL) {
+			LogCrit(COMPONENT_PNFS,
+			"gsh_calloc failed: %u", sizeof(*mds_ctx->mds));
+			rc = -ENOMEM;
+			goto out;
+		}
+		mds_ctx->mds->stripe_unit = CORTXFS_PNFS_STRIPE_UNIT;	
+	
+		rc = get_config_item("pNFS","NumDataServers",cfg_items, &items);
+		if (items == NULL){
+			LogCrit(COMPONENT_PNFS,"Zero data servers\n");
+			rc = -rc; 
+			goto out;
+		}
+		
+		NumDataServers=(int)get_int_config_value(items, 0, 0, NULL);
+		
+		LIST_INIT(&mds_ctx->mds->mds_ds_list);
+			
+		for (i=1; i<=NumDataServers; i++)
+		{
+			snprintf(DS_List,sizeof(DS_List),"DS%d",i);
+			LogDebug(COMPONENT_PNFS,"DS_List is %s",DS_List);
+			rc = get_config_item("pNFS",DS_List,cfg_items, &items);
+			if (items == NULL)
+			{
+				LogCrit(COMPONENT_PNFS,"No Data Server Entry DS%d",i);
+				rc = -rc; 
+				goto out;
+			}
+			
+			ds = gsh_calloc(1, sizeof(*ds));
+			if (ds == NULL) {
+				LogCrit(COMPONENT_PNFS, "gsh_calloc failed: %u", sizeof(*ds));
+				rc = -ENOMEM;
+				goto out;
+			}			
+ 			/**
+                         * TODO: Once dynamic add/remove DS support is added
+                         * either via temp. config file or via HA, we will need
+                         * to design how to update and maintain ds_id
+                         */
+                        ds->ds_id = i;
+                        LIST_INIT(&ds->ds_addr_list);
+
+                        // per DS, only one addr as of now
+                        // TODO: support for multiple addresses
+                        ds_addr = gsh_calloc(1, sizeof(*ds_addr));
+                        if (ds_addr == NULL) {
+                                LogCrit(COMPONENT_PNFS,
+                                        "gsh_calloc failed: %u",
+                                        sizeof(*ds_addr));
+                                rc = -ENOMEM;
+                                goto out;
+                        }
+                        DS_Info = get_string_config_value(items,NULL);
+			if (DS_Info == NULL){
+				LogCrit(COMPONENT_PNFS,
+					"No valid IP address or Port found\n");
+				goto out;
+			}
+			/* Check if the destination tmp buffer is big enough */
+			if (sizeof(DS_Info) > sizeof(tmp)) {
+				LogCrit(COMPONENT_PNFS,
+					"Destination buffer too small\n");
+				goto out;
+			}
+			/* Get the IP address */
+			strcpy(tmp,DS_Info);
+			ipaddr = strtok(tmp,":");
+			ds_addr->ds_ip_addr.sin_addr.s_addr = inet_addr(ipaddr);	
+
+			/* Get the port number */
+			strcpy(tmp,DS_Info);
+			
+			port = strstr(tmp,":");
+			sscanf(port+1,"%d",&ds_addr->ds_ip_port);
+
+			ds_addr->ds_addr_id = i;
+
+			LIST_INSERT_HEAD(&ds->ds_addr_list, ds_addr,
+                                         ds_addr_link);
+
+			LIST_INSERT_HEAD(&mds_ctx->mds->mds_ds_list, ds,
+                                         ds_link);
+                        mds_ctx->mds->NumDataServers++;
+                }
+
+	}
+	else{
+		goto out;
+	}	
+
+	rc = pthread_mutex_init(&mds_ctx->mds_mutex, NULL);
+	if (rc != 0) {
+		LogCrit(COMPONENT_PNFS,
+			"pthread_mutex_init failed\n");
+		goto out;
+	}
+
+out:
+	if (items) {
+		free_ini_config_metadata(items);
+	}
+	if (rc != 0) {
+		if (mds_ctx) {
+			cortxfs_pmds_cleanup(mds_ctx->mds);
+			gsh_free(mds_ctx);
+		}
+	} else {
+		kvsfs->mds_ctx = mds_ctx;
+	}
+
+	return rc;
+}
+
+/**
+ * @brief De-initialize the CORTXFS FSAL's global pNFS config, must be called only
  * once while FSAL unloads/stops
  *
- * @param[in]  kvsfs         KVSFS FSAL's global context
+ * @param[in]  kvsfs         CORTXFS FSAL's global context
  * @param[out] kvsfs         pNFS config and context removed
  *
  * @return 0 if success, else negative error value
  */
 
-int kvsfs_pmds_fini(struct kvsfs_fsal_module *kvsfs)
+int cortxfs_pmds_fini(struct kvsfs_fsal_module *kvsfs)
 {
 	int rc = 0;
 
@@ -358,7 +494,7 @@ int kvsfs_pmds_fini(struct kvsfs_fsal_module *kvsfs)
 		goto out;
 	}
 
-	kvsfs_pmds_cleanup(kvsfs->mds_ctx->mds);
+	cortxfs_pmds_cleanup(kvsfs->mds_ctx->mds);
 
 	rc = pthread_mutex_unlock(&kvsfs->mds_ctx->mds_mutex);
 	if (rc != 0) {
@@ -378,142 +514,6 @@ out:
 	return rc;
 }
 
-
-/**
- * @brief Load pNFS config from export entries/override with new entries
- *
- * Until the global config support is added, we keep using the per-export
- * config as of now, but only take the pNFS config from the very first export.
- * Adding new exports/endpoints will override previous config and will cause
- * run-time update of the in-memory pNFS config. Until HA's multi-node support
- * is integrated, this approach can be used temporarily to simulate add-delete
- * multiple DS dynamically.
- * However please note that this support is not complete without implementing
- * the references (i.e. ds_ref and ds_addr_refds_addr_ref).
- * Note: Update will be cancelled if configuration error is encountered.
- * Duplicate/No-op update validation is not available yet.
- *
- * @param[in]  kvsfs         KVSFS FSAL's global context
- * @param[in]  exp_config    export config to use for new pNFS config
- * @param[out] kvsfs         pNFS config and context modified 
- *
- * @return 0 if success, else negative error value
- *
- */
-
-int kvsfs_pmds_update_exp(struct kvsfs_fsal_module *kvsfs,
-			  const struct kvsfs_fsal_export *exp_config)
-{
-	int rc = 0;
-	int idx = 0;
-	uint32_t local_pnfs_role;
-	struct kvsfs_pnfs_mds_info *local_mds = NULL;
-	struct kvsfs_pnfs_ds_info *ds;
-	struct kvsfs_pnfs_ds_addr *ds_addr;
-
-	dassert(kvsfs != NULL);
-	dassert(exp_config != NULL);
-
-	local_pnfs_role = KVSFS_PNFS_DISABLED;
-
-	if (exp_config->pnfs_param.pnfs_enabled) {
-		if ((exp_config->pnfs_ds_enabled) &&
-		    (exp_config->pnfs_mds_enabled)) {
-			local_pnfs_role = KVSFS_PNFS_BOTH;
-		} else if (exp_config->pnfs_mds_enabled) {
-			local_pnfs_role = KVSFS_PNFS_MDS;
-		} else if (exp_config->pnfs_ds_enabled) {
-			local_pnfs_role = KVSFS_PNFS_DS;
-		}
-	}
-
-	if (local_pnfs_role > KVSFS_PNFS_DS) {
-		local_mds = gsh_calloc(1, sizeof(*local_mds));
-		if (local_mds == NULL) {
-			LogCrit(COMPONENT_PNFS,
-				"gsh_calloc failed: %u",
-				sizeof(*local_mds));
-			rc = -ENOMEM;
-			goto out;
-		}
-
-		local_mds->stripe_unit =
-			exp_config->pnfs_param.stripe_unit;
-
-		LIST_INIT(&local_mds->mds_ds_list);
-		local_mds->num_ds = 0;
-
-		for(idx = 0; idx < exp_config->pnfs_param.nb_ds; idx++) {
-			ds = gsh_calloc(1, sizeof(*ds));
-			if (ds == NULL) {
-				LogCrit(COMPONENT_PNFS,
-					"gsh_calloc failed: %u",
-					sizeof(*ds));
-				rc = -ENOMEM;
-				goto out;
-			}
-			/**
-			 * TODO: Once dynamic add/remove DS support is added
-			 * either via temp. config file or via HA, we will need
-			 * to design how to update and maintain ds_id
-			 */
-			ds->ds_id = idx;
-			LIST_INIT(&ds->ds_addr_list);
-
-			// per DS, only one addr as of now
-			// TODO: support for multiple addresses
-			ds_addr = gsh_calloc(1, sizeof(*ds_addr));
-			if (ds_addr == NULL) {
-				LogCrit(COMPONENT_PNFS,
-					"gsh_calloc failed: %u",
-					sizeof(*ds_addr));
-				rc = -ENOMEM;
-				goto out;
-			}
-			ds_addr->ds_addr_id =
-				exp_config->pnfs_param.ds_array[idx].id;
-			ds_addr->ds_ip_port =
-				exp_config->pnfs_param.ds_array[idx].ipport;
-			ds_addr->ds_ip_addr =
-				exp_config->pnfs_param.ds_array[idx].ipaddr;
-
-			LIST_INSERT_HEAD(&ds->ds_addr_list, ds_addr,
-					 ds_addr_link);
-
-			LIST_INSERT_HEAD(&local_mds->mds_ds_list, ds,
-					 ds_link);
-			local_mds->num_ds++;
-		}
-
-		rc = pthread_mutex_lock(&kvsfs->mds_ctx->mds_mutex);
-		if (rc != 0) {
-			LogCrit(COMPONENT_PNFS,
-				"pthread_mutex_lock failed: %x", rc);
-			goto out;
-		}
-
-		// delete the current config and commit the change
-		kvsfs_pmds_cleanup(kvsfs->mds_ctx->mds);
-
-		kvsfs->mds_ctx->pnfs_role = local_pnfs_role;
-		kvsfs->mds_ctx->mds = local_mds; 
-
-		rc = pthread_mutex_unlock(&kvsfs->mds_ctx->mds_mutex);
-		if (rc != 0) {
-			LogCrit(COMPONENT_PNFS,
-				"pthread_mutex_unlock failed: %x", rc);
-			goto out;
-		}
-	}
-
-out:
-	if (rc != 0) {
-		kvsfs_pmds_cleanup(local_mds);
-	}
-
-	return rc;
-}
-
 /**
  * @brief Internal handler for kvsfs_getdeviceinfo()
  * Get information about a pNFS layout's stripe to device mapping.
@@ -523,7 +523,7 @@ out:
  * round robin manner. As of now, it does not support load balancing,
  * in-memory or persistent device map, multiple stripes etc.
  *
- * @param[in]  mds_ctx       Global KVSFS FSAL's pNFS MDS context
+ * @param[in]  mds_ctx       Global CORTXFS FSAL's pNFS MDS context
  * @param[in]  deviceid	     caller passed device id
  * @param[out] stripes_nmemb array 'stripes' no. of entries, 1 as of now
  * @param[out] stripes       array of stripes
@@ -535,7 +535,7 @@ out:
  */
 
 nfsstat4
-kvsfs_pmds_getdevinfo_internal(struct kvsfs_pnfs_mds_ctx *mds_ctx,
+cortxfs_pmds_getdevinfo_internal(struct cortxfs_pnfs_mds_ctx *mds_ctx,
 			       const struct pnfs_deviceid *deviceid,
 			       uint32_t *stripes_nmemb,
 			       uint32_t **stripes,
@@ -544,13 +544,13 @@ kvsfs_pmds_getdevinfo_internal(struct kvsfs_pnfs_mds_ctx *mds_ctx,
 			       fsal_multipath_member_t **hosts)
 {
 	nfsstat4 nfs_status = NFS4_OK;
-	struct kvsfs_pnfs_ds_info **ds;
-	struct kvsfs_pnfs_ds_addr *ds_addr;
+	struct cortxfs_pnfs_ds_info **ds;
+	struct cortxfs_pnfs_ds_addr *ds_addr;
 	unsigned long dsaddr = INADDR_NONE;
 	struct sockaddr_in6 *addr;
-	uint32_t stripes_count = KVSFS_PNFS_MIN_STRIPE_COUNT;
+	uint32_t stripes_count = CORTXFS_PNFS_MIN_STRIPE_COUNT;
 	uint32_t idx = 0;
-	fsal_multipath_member_t hosts_local[KVSFS_PNFS_MAX_HOST_COUNT] = {0};
+	fsal_multipath_member_t hosts_local[CORTXFS_PNFS_MAX_HOST_COUNT] = {0};
 	int rc = 0;
 
 	dassert(deviceid != NULL);
@@ -563,13 +563,12 @@ kvsfs_pmds_getdevinfo_internal(struct kvsfs_pnfs_mds_ctx *mds_ctx,
 	/**
 	 * Only pNFS Meta Data Server is allowed to execute this
 	 */
-	if (mds_ctx->pnfs_role < KVSFS_PNFS_MDS) {
+	if (mds_ctx->pnfs_role < CORTXFS_PNFS_MDS) {
 		LogCrit(COMPONENT_PNFS, "incorrect role: %x",
 			mds_ctx->pnfs_role);
 		nfs_status = NFS4ERR_NOTSUPP;
 		goto out;
 	}
-
 	dassert(mds_ctx->mds != NULL);
 
 	/**
@@ -599,18 +598,18 @@ kvsfs_pmds_getdevinfo_internal(struct kvsfs_pnfs_mds_ctx *mds_ctx,
 
 	if (*ds == NULL) {
 		// get an elem
-		if (mds_ctx->mds->num_ds == 0) {
+		if (mds_ctx->mds->NumDataServers == 0) {
 			// consistency check
 			dassert(LIST_EMPTY(
 				&mds_ctx->mds->mds_ds_list) != True);
-			// atleast the self entry is expected for KVSFS_PNFS_BOTH
-			dassert(mds_ctx->pnfs_role != KVSFS_PNFS_BOTH);
+			// atleast the self entry is expected for CORTXFS_PNFS_BOTH
+			dassert(mds_ctx->pnfs_role != CORTXFS_PNFS_BOTH);
 			LogWarn(COMPONENT_PNFS, "No DS for role: %x",
 				mds_ctx->pnfs_role);
 			nfs_status = NFS4ERR_NOENT;
 			goto unlock_out;
 		}
-		*ds = LIST_FIRST(&mds_ctx->mds->mds_ds_list);
+		*ds = LIST_FIRST(&mds_ctx->mds->mds_ds_list);	
 	} else {
 		// try to use the next one if available
 		*ds = LIST_NEXT(*ds, ds_link);
@@ -632,22 +631,22 @@ kvsfs_pmds_getdevinfo_internal(struct kvsfs_pnfs_mds_ctx *mds_ctx,
 			 */
 			dsaddr = ((struct in_addr *)
 					(addr->sin6_addr.s6_addr+12))->s_addr;
-			LogDebug(COMPONENT_PNFS,
-					"advertises DS addr=%u.%u.%u.%u port=%u",
-					(ntohl(dsaddr) & 0xFF000000) >> 24,
-					(ntohl(dsaddr) & 0x00FF0000) >> 16,
-					(ntohl(dsaddr) & 0x0000FF00) >> 8,
-					(unsigned int)ntohl(dsaddr) & 0x000000FF,
-					(unsigned short)(ds_addr->ds_ip_port));
 		} else {
 			// This should be a V4 address
-			LogDebug(COMPONENT_PNFS, "\n This is a v4 address\n");
 			dsaddr = ((struct sockaddr_in *)
 					(&ds_addr->ds_ip_addr))->sin_addr.s_addr;
 		}
+		LogInfo(COMPONENT_PNFS,
+			"advertises DS addr=%u.%u.%u.%u port=%u",
+			(ntohl(dsaddr) & 0xFF000000) >> 24,
+			(ntohl(dsaddr) & 0x00FF0000) >> 16,
+			(ntohl(dsaddr) & 0x0000FF00) >> 8,
+			(unsigned int)ntohl(dsaddr) & 0x000000FF,
+			(unsigned short)(ds_addr->ds_ip_port));
 
+	
 		// This should not happen
-		dassert(idx != KVSFS_PNFS_MAX_HOST_COUNT);
+		dassert(idx != CORTXFS_PNFS_MAX_HOST_COUNT);
 
 		hosts_local[idx].proto = IPPROTO_TCP;
 		hosts_local[idx].addr = ntohl(dsaddr);
@@ -707,7 +706,7 @@ kvsfs_fs_layouttypes(struct fsal_export *export_hdl,
 /**
  * @brief Get layout block size for export
  *
- * This function just returns the KVSFS default.
+ * This function just returns the CORTXFS default.
  *
  * @param[in] export_pub Public export handle
  *
@@ -805,11 +804,7 @@ nfsstat4 kvsfs_getdeviceinfo(struct fsal_module *fsal_hdl,
 		goto out;
 	}
 
-	LogDebug(COMPONENT_PNFS, "device_id %u/%u/%u %lu",
-		 deviceid->device_id1, deviceid->device_id2,
-		 deviceid->device_id4, deviceid->devid);
-
-	nfs_status = kvsfs_pmds_getdevinfo_internal(KVSFS.mds_ctx, deviceid,
+	nfs_status = cortxfs_pmds_getdevinfo_internal(KVSFS.mds_ctx, deviceid,
 						    &stripes_nmemb,
 						    &stripes,
 						    &ds_count,
@@ -817,7 +812,7 @@ nfsstat4 kvsfs_getdeviceinfo(struct fsal_module *fsal_hdl,
 						    &hosts);
 	if (nfs_status != NFS4_OK) {
 		LogCrit(COMPONENT_PNFS,
-			"kvsfs_pmds_getdevinfo_internal failed: %x",
+			"cortxfs_pmds_getdevinfo_internal failed: %x",
 			nfs_status);
 		T_EXIT0(nfs_status);
 		goto out;
@@ -944,11 +939,11 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 	struct gsh_buffdesc ds_desc;
 	kvsfs_fsal = (struct kvsfs_fsal_module *)
 		container_of(obj_hdl->fsal, struct kvsfs_fsal_module, fsal);
-	struct kvsfs_pnfs_mds_ctx *mds_ctx = kvsfs_fsal->mds_ctx;
+	struct cortxfs_pnfs_mds_ctx *mds_ctx = kvsfs_fsal->mds_ctx;
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, arg);
 
-	if (mds_ctx->pnfs_role < KVSFS_PNFS_MDS) {
+	if (mds_ctx->pnfs_role < CORTXFS_PNFS_MDS) {
 		LogCrit(COMPONENT_PNFS,
 			"MDS operation on Non-MDS export");
 		T_EXIT0(mds_ctx->pnfs_role);
