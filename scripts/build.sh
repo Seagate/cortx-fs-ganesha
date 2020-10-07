@@ -34,7 +34,8 @@ KVSFS_NFS_GANESHA_BUILD_DIR=${KVSFS_NFS_GANESHA_BUILD_DIR:-"$KVSFS_NFS_GANESHA_D
 # Select CORTXFS Source Version.
 # Superproject: derived from cortxfs version.
 # Local: taken fron VERSION file.
-KVSFS_VERSION=${CORTXFS_VERSION:-"$(cat $KVSFS_SOURCE_ROOT/VERSION)"}
+KVSFS_VERSION_TEMP=$(cat "$KVSFS_SOURCE_ROOT/VERSION")
+KVSFS_VERSION=${CORTXFS_VERSION:-"$KVSFS_VERSION_TEMP"}
 
 # Select CORTXFS Build Version.
 # Taken from git rev of CORTX-FS-GANESHA REPO
@@ -171,7 +172,7 @@ kvsfs_print_env() {
 
 ###############################################################################
 _kvsfs_check_deps() {
-    if [ ! -f $KVSFS_NFS_GANESHA_BUILD_DIR/include/config.h ]; then
+    if [ ! -f "$KVSFS_NFS_GANESHA_BUILD_DIR/include/config.h" ]; then
         echo "Cannot find auto generated files in $KVSFS_NFS_GANESHA_BUILD_DIR"
         echo "Please configure NFS Ganesha manually or use the top-level script"
         return 1
@@ -184,25 +185,25 @@ _kvsfs_check_deps() {
 ###############################################################################
 kvsfs_tools_configure() {
 
-	mkdir $KVSFS_TEST_BUILD
-	pushd $KVSFS_TEST_BUILD
+	mkdir "$KVSFS_TEST_BUILD"
+	pushd "$KVSFS_TEST_BUILD"
 
 	local cmd=" cmake \
 -DBASE_VERSION:STRING=${KVSFS_VERSION} \
 -DRELEASE_VER:STRING=${KVSFS_BUILD_VERSION} \
 -DPROJECT_NAME_BASE:STRING=${PROJECT_NAME_BASE} \
--DINSTALL_DIR_ROOT:STRING=${INSTALL_DIR_ROOT}
-$KVSFS_TEST_DIR"
-	echo -e "Config:\n $cmd" > $KVSFS_BUILD/.config
-	echo -e "Env:\n $(kvsfs_print_env)" >> $KVSFS_BUILD/.config
-	$cmd
+-DINSTALL_DIR_ROOT:STRING=${INSTALL_DIR_ROOT}"
+
+	echo -e "Config:\n $cmd" > "$KVSFS_BUILD/.config"
+	echo -e "Env:\n $(kvsfs_print_env)" >> "$KVSFS_BUILD/.config"
+	$cmd "$KVSFS_TEST_DIR"
 
 	popd
 }
 
 ###############################################################################
 kvsfs_configure() {
-    if [ -f $KVSFS_BUILD/.config ]; then
+    if [ -f "$KVSFS_BUILD/.config" ]; then
         echo "Build folder $KVSFS_BUILD has already been configured. Please remove it."
         exit 1;
     fi
@@ -215,27 +216,40 @@ kvsfs_configure() {
     local GANESHA_SRC="$KVSFS_NFS_GANESHA_DIR/src"
     local GANESHA_BUILD="$KVSFS_NFS_GANESHA_BUILD_DIR"
 
-    mkdir $KVSFS_BUILD
-    cd $KVSFS_BUILD
+    mkdir "$KVSFS_BUILD"
+    cd "$KVSFS_BUILD"
 
     local cmd="cmake \
--DGANESHASRC:PATH=${GANESHA_SRC} \
--DGANESHABUILD:PATH=${GANESHA_BUILD} \
+-DGANESHASRC:PATH=\"$GANESHA_SRC\" \
+-DGANESHABUILD:PATH=\"$GANESHA_BUILD\" \
 -DBASE_VERSION:STRING=${KVSFS_VERSION} \
 -DRELEASE_VER:STRING=${KVSFS_BUILD_VERSION} \
--DLIBCORTXUTILS:PATH=${CORTX_UTILS_LIB} \
--DCORTXUTILSINC:PATH=${CORTX_UTILS_INC} \
--DNSALINC:PATH=${NSAL_INC} \
--DLIBNSAL:PATH=${NSAL_LIB} \
--DCORTXFSINC:PATH=${CORTXFS_INC} \
--DLIBCORTXFS:PATH=${CORTXFS_LIB} \
+-DLIBCORTXUTILS:PATH=\"$CORTX_UTILS_LIB\" \
+-DCORTXUTILSINC:PATH=\"$CORTX_UTILS_INC\" \
+-DNSALINC:PATH=\"$NSAL_INC\" \
+-DLIBNSAL:PATH=\"$NSAL_LIB\" \
+-DCORTXFSINC:PATH=\"$CORTXFS_INC\" \
+-DLIBCORTXFS:PATH=\"$CORTXFS_LIB\" \
 -DPROJECT_NAME_BASE:STRING=${PROJECT_NAME_BASE} \
--DINSTALL_DIR_ROOT:STRING=${INSTALL_DIR_ROOT}
+-DINSTALL_DIR_ROOT:STRING=${INSTALL_DIR_ROOT} \
 $KVSFS_SRC"
 
-    echo -e "Config:\n $cmd" > $KVSFS_BUILD/.config
-    echo -e "Env:\n $(kvsfs_print_env)" >> $KVSFS_BUILD/.config
-    $cmd
+    echo -e "Config:\n $cmd" > "$KVSFS_BUILD/.config"
+    echo -e "Env:\n $(kvsfs_print_env)" >> "$KVSFS_BUILD/.config"
+cmake \
+-DGANESHASRC:PATH="$GANESHA_SRC" \
+-DGANESHABUILD:PATH="$GANESHA_BUILD" \
+-DBASE_VERSION:STRING="$KVSFS_VERSION" \
+-DRELEASE_VER:STRING="$KVSFS_BUILD_VERSION" \
+-DLIBCORTXUTILS:PATH="$CORTX_UTILS_LIB" \
+-DCORTXUTILSINC:PATH="$CORTX_UTILS_INC" \
+-DNSALINC:PATH="$NSAL_INC" \
+-DLIBNSAL:PATH="$NSAL_LIB" \
+-DCORTXFSINC:PATH="$CORTXFS_INC" \
+-DLIBCORTXFS:PATH="$CORTXFS_LIB" \
+-DPROJECT_NAME_BASE:STRING="$PROJECT_NAME_BASE" \
+-DINSTALL_DIR_ROOT:STRING="$INSTALL_DIR_ROOT" \
+"$KVSFS_SRC"
 
     cd -
 	kvsfs_tools_configure
@@ -265,24 +279,24 @@ kvsfs_purge() {
 
 ###############################################################################
 kvsfs_test_make() {
-	if [ ! -d $KVSFS_TEST_BUILD ]; then
+	if [ ! -d "$KVSFS_TEST_BUILD" ]; then
         echo "Build folder $KVSFS_TEST_BUILD does not exist. Please run 'config'"
         exit 1;
     fi
 
-    pushd $KVSFS_TEST_BUILD
+    pushd "$KVSFS_TEST_BUILD"
     make "$@"
     popd
 }
 
 ###############################################################################
 kvsfs_make() {
-    if [ ! -d $KVSFS_BUILD ]; then
+    if [ ! -d "$KVSFS_BUILD" ]; then
         echo "Build folder $KVSFS_BUILD does not exist. Please run 'config'"
         exit 1;
     fi
 
-    pushd $KVSFS_BUILD
+    pushd "$KVSFS_BUILD"
     make "$@"
     popd
 	kvsfs_test_make "$@"
@@ -312,8 +326,8 @@ kvsfs_rpm_install() {
 
     for pkg in ${mypkg[@]}; do
         local rpm_file=$rpms_dir/$pkg-$suffix
-        if [ ! -f $rpm_file ]; then
-            echo "Cannot find RPM file for package "$pkg" ('$rpm_file')"
+        if [ ! -f "$rpm_file" ]; then
+            echo "Cannot find RPM file for package \"$pkg\" (\"$rpm_file\")"
             return 1
         else
             myrpms+=( $rpm_file )
