@@ -9,23 +9,6 @@
 
 
 /******************************************************************************/
-
-/* this needs to be refactored to put ipport inside sockaddr_in */
-struct kvsfs_pnfs_ds_parameter {
-	struct glist_head ds_list;
-	sockaddr_t ipaddr;
-	unsigned short ipport;
-	unsigned int id;
-};
-
-#define KVSFS_NB_DS 4
-struct kvsfs_exp_pnfs_parameter {
-	unsigned int stripe_unit;
-	bool pnfs_enabled;
-	unsigned int nb_ds;
-	struct kvsfs_pnfs_ds_parameter ds_array[KVSFS_NB_DS];
-};
-
 struct kvsfs_fsal_index_context;
 
 /* Wrapper for a File Handle object. */
@@ -51,10 +34,10 @@ struct kvsfs_fsal_export {
 
 	/** Export config. */
 	char *cfs_config;
-	// TODO: The following members will be moved to global FSAL
+
+	/* PNFS, MDS and DS need be enabled on FSAL export */	
 	bool pnfs_ds_enabled;
 	bool pnfs_mds_enabled;
-	struct kvsfs_exp_pnfs_parameter pnfs_param;
 };
 
 /** Get export's Root handle by path. */

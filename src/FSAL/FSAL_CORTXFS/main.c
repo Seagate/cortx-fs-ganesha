@@ -108,10 +108,6 @@ static struct config_item kvsfs_params[] = {
 		       kvsfs_fsal_module, fs_info.umask),
 	CONF_ITEM_BOOL("auth_xdev_export", false,
 		       kvsfs_fsal_module, fs_info.auth_exportpath_xdev),
-	CONF_ITEM_BOOL("pnfs_ds", true,
-			kvsfs_fsal_module, fs_info.pnfs_ds),
-	CONF_ITEM_BOOL("pnfs_mds", true,
-			kvsfs_fsal_module, fs_info.pnfs_mds),        
 	CONFIG_EOL
 };
 
@@ -163,12 +159,21 @@ static fsal_status_t kvsfs_init_config(struct fsal_module *fsal_hdl,
 	 * file, that change needs to be done from here
 	 * Initialize KVSFS FSAL obj's pNFS module
 	 */
-	rc = kvsfs_pmds_ini(kvsfs, kvsfs_params);
+	rc = cortxfs_pmds_ini(kvsfs, kvsfs_params);
 	if (rc == -1) {
 		LogCrit(COMPONENT_FSAL, "Failed to load pNFS config");
 		rc = -EINVAL;
 		goto out;
 	}
+
+	uint8_t pnfs_role = get_pnfs_role(kvsfs);
+	if (pnfs_role == CORTXFS_PNFS_MDS || pnfs_role == CORTXFS_PNFS_BOTH) {
+		kvsfs->fs_info.pnfs_mds = true;
+	}
+	if (pnfs_role == CORTXFS_PNFS_DS || pnfs_role == CORTXFS_PNFS_BOTH) {
+		kvsfs->fs_info.pnfs_ds = true;
+	}
+
 
 	/* assign the final values to the base structure */
 	fsal_hdl->fs_info = kvsfs->fs_info;
@@ -330,9 +335,9 @@ static int kvsfs_unload(struct fsal_module *fsal_hdl)
 		goto out;
 	}
 
-	rc = kvsfs_pmds_fini(&KVSFS);
+	rc = cortxfs_pmds_fini(&KVSFS);
 	if (rc) {
-		LogCrit(COMPONENT_FSAL, "kvsfs_pmds_fini() failed (%d)", rc);
+		LogCrit(COMPONENT_FSAL, "cortxfs_pmds_fini() failed (%d)", rc);
 		goto out;
 	}
 

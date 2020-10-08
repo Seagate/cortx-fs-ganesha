@@ -24,6 +24,7 @@ DEFAULT_EXPORT_OPTION+="clients=*,Squash=no_root_squash,access_type=RW,protocols
 # Enable/Disable pNFS
 pNFS_ENABLED=false
 pNFS_DATA_SERVER=$(hostname -i)
+pNFS_ROLE="PNFS_DISABLED"
 
 function die {
 	log "error: $*"
@@ -99,6 +100,35 @@ function motr_lib_init {
 	[ $? -ne 0 ] && die "Failed to Initialise motr_lib fs_meta index"
 }
 
+function prepare_pnfs_conf {
+IFS=',' read -ra ADDR <<< "$pNFS_DATA_SERVER"
+count=0
+rm -rf /etc/ganesha/pNFS.conf
+echo "[pNFS]" >> /etc/ganesha/pNFS.conf
+echo "  pNFS_Role = $pNFS_ROLE" >> /etc/ganesha/pNFS.conf
+
+if [ "$pNFS_ROLE" != "PNFS_DISABLED" ]; then
+pNFS_ENABLED=true;
+echo "pNFS_ENABLED is $pNFS_ENABLED"
+fi
+
+if [ "$pNFS_ROLE" == "MDS" ] || [ "$pNFS_ROLE" == "BOTH" ]; then
+for i in "${ADDR[@]}"; do
+let "count= count+1"
+echo "  DS$count = $i:2049" >> /etc/ganesha/pNFS.conf
+done
+
+if [ "$pNFS_ROLE" == "BOTH" ]; then
+let "count= count+1"
+echo "  DS$count = $(hostname -i):2049" >> /etc/ganesha/pNFS.conf
+fi
+echo "  NumDataServers = $count" >> /etc/ganesha/pNFS.conf
+
+echo "  MDS = $(hostname -i)" >> /etc/ganesha/pNFS.conf
+
+fi
+}
+
 function prepare_cortx_fs_conf {
 	log "Initializing Cortx-FS..."
 
@@ -162,15 +192,6 @@ EXPORT {
 		Name  = CORTX-FS;
 		cortxfs_config = $CORTXFS_CONF;
 
-		PNFS {
-			Stripe_Unit = 8192;
-			pnfs_enabled = $pNFS_ENABLED;
-			Nb_Dataserver = 1;
-			DS1 {
-				DS_Addr = $pNFS_DATA_SERVER;
-				DS_Port = 2049;
-			}
-		}
 	}
 
 	# Allowed security types for this export
@@ -264,12 +285,6 @@ function cortx_nfs_init {
 	echo -e "\nNFS Initialization is complete"
 }
 
-function cortx_ganesha_restart {
-	systemctl restart nfs-ganesha || die "Failed to start NFS-Ganesha"
-	
-	echo -e "\nNFS-Ganesha restarted"
-}
-
 function cortx_nfs_config {
 	[ -n "$PROVI_SETUP" ] && get_ep
 
@@ -279,6 +294,9 @@ function cortx_nfs_config {
 
 	# Check prerequisites
 	check_prerequisites
+
+	# Prepare pNFS.conf
+	prepare_pnfs_conf
 
 	# Prepare cortxfs.conf
 	prepare_cortx_fs_conf
@@ -301,6 +319,65 @@ function cortx_nfs_config {
 
 	echo success > $NFS_INITIALIZED
 	echo -e "\nNFS setup is complete"
+}
+
+function cortx_ganesha_restart {
+	echo -e "\nStopping NFS Ganesha"
+	systemctl stop nfs-ganesha || die "Failed to stop NFS-Ganesha"
+
+	echo -e "\nUpdating conf file"
+        cat >> $GANESHA_CONF << EOM
+# An example of KVSFS NFS Export
+EXPORT {
+
+        # Export Id (mandatory, each EXPORT must have a unique Export_Id)
+        Export_Id = 12345;
+
+        # Exported path (mandatory)
+        Path = $FS_PATH;
+
+        # Pseudo Path (required for NFSv4 or if mount_path_pseudo = true)
+        Pseudo = /$FS_PATH;
+
+        # Exporting FSAL
+        FSAL {
+                Name  = CORTX-FS;
+                cortxfs_config = $CORTXFS_CONF;
+
+                PNFS {
+                        Stripe_Unit = 8192;
+                        pnfs_enabled = $pNFS_ENABLED;
+                        Nb_Dataserver = 1;
+                        DS1 {
+                                DS_Addr = $pNFS_DATA_SERVER;
+                                DS_Port = 2049;
+                        }
+                }
+        }
+
+        # Allowed security types for this export
+        SecType = sys;
+
+        Filesystem_id = 192.168;
+
+        client {
+                clients = *;
+
+                # Whether to squash various users.
+                Squash=no_root_squash;
+
+                # Access type for clients.  Default is None, so some access must be
+                # given. It can be here, in the EXPORT_DEFAULTS, or in a CLIENT block
+                access_type=RW;
+
+                # Restrict the protocols that may use this export.  This cannot allow
+                # access that is denied in NFS_CORE_PARAM.
+                protocols = 4;
+        }
+}
+EOM
+	echo -e "\nStarting NFS Ganesha"
+	systemctl start nfs-ganesha || die "Failed to start NFS-Ganesha"
 }
 
 function cortx_nfs_cleanup {
@@ -339,8 +416,8 @@ Options:
   -p Prompt
   -q To perform Setup on Provisioner VM
   -d To create FS
-  -r pNFS Enabled
-  -D pNFS Data-Server IP Addr 
+  -r pNFS Role {MDS|DS|BOTH}.If pNFS should be disabled do not specify -r option
+  -D pNFS Data-Server IP Addr for MDS and BOTH options {IPADDR1,IPADDR2...IPADDRN} 
 
 Default values used for Index creation on Dev env are-
    Profile:               <0x7000000000000001:0>
@@ -366,7 +443,7 @@ while [ ! -z $1 ]; do
 	case "$1" in
 		-h ) usage;;
 		-f ) force=1;;
-		-r ) pNFS_ENABLED=true;;
+		-r ) pNFS_ROLE=$2; shift 1;;
 		-D ) pNFS_DATA_SERVER=$2; shift 1;;
 		-p ) prompt=1;;
 		-q ) PROVI_SETUP=1;;

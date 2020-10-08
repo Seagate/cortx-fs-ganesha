@@ -4,8 +4,15 @@
 #include "fsal.h" /* attributes */
 #include "kvsfs_methods.h"
 
+enum cortxfs_pNFS_server_role {
+        CORTXFS_PNFS_DISABLED = 0,
+        CORTXFS_PNFS_DS,
+        CORTXFS_PNFS_MDS,
+        CORTXFS_PNFS_BOTH
+};
+
 // forward declaration
-struct kvsfs_pnfs_mds_ctx;
+struct cortxfs_pnfs_mds_ctx;
 
 /* KVSFS FSAL module private storage
  */
@@ -15,7 +22,7 @@ struct kvsfs_fsal_module {
 	struct fsal_staticfsinfo_t fs_info;
 	struct fsal_obj_ops handle_ops;
 	/* pNFS related KVSFS FSAL's global config */
-	struct kvsfs_pnfs_mds_ctx *mds_ctx;
+	struct cortxfs_pnfs_mds_ctx *mds_ctx;
 };
 /** KVSFS-related data for a file state object. */
 struct kvsfs_file_state {
@@ -31,6 +38,8 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 				const struct fsal_up_vector *up_ops);
 
 void kvsfs_handle_ops_init(struct fsal_obj_ops *ops);
+uint8_t get_pnfs_role(struct kvsfs_fsal_module *kvsfs);
+
 struct kvsfs_fsal_obj_handle {
 	/* Base Handle */
 	struct fsal_obj_handle obj_handle;
@@ -87,11 +96,10 @@ extern struct fsal_staticfsinfo_t global_fs_info;
 /* KVSFS methods for pnfs
  */
 
-int kvsfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
+int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 		   const struct config_item *kvsfs_params);
-int kvsfs_pmds_fini(struct kvsfs_fsal_module *kvsfs);
-int kvsfs_pmds_update_exp(struct kvsfs_fsal_module *kvsfs,
-			  const struct kvsfs_fsal_export *exp_config);
+int cortxfs_pmds_fini(struct kvsfs_fsal_module *kvsfs);
+
 nfsstat4 kvsfs_getdeviceinfo(struct fsal_module *fsal_hdl,
 			      XDR *da_addr_body,
 			      const layouttype4 type,
