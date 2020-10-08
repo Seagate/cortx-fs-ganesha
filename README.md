@@ -2,7 +2,7 @@
 
 # CORTXFS-Ganesha
 
-The CORTXFS-GANESHA repository provides the FSAL code for CORTXFS that is used by the CORTX-NFS-Ganesha repository. In other words, CORTXFS-Ganesha is the backend for CORTXFS implementation. The FSAL (Filesystem Abstraction Layer) implements the NFS-Ganesha FSAL-API based on CORTXFS as the underlying filesystem.
+The CORTXFS-GANESHA repository provides CORTXFS FSAL (Filesystem Abstraction Layer) code. This code implements NFS Ganesha FSAL-APIs, based on CORTXFS as the underlying filesystem. NFS Ganesha makes calls into CORTXFS FSAL code and CORTXFS FSAL code interacts with CORTXFS.
 
 **See also:**
 
