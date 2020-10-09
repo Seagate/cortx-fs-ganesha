@@ -442,20 +442,19 @@ int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 			LIST_INSERT_HEAD(&mds_ctx->mds->mds_ds_list, ds,
                                          ds_link);
                         mds_ctx->mds->NumDataServers++;
-                }
+		}
 
+		rc = pthread_mutex_init(&mds_ctx->mds_mutex, NULL);
+		if (rc != 0) {
+			LogCrit(COMPONENT_PNFS,
+			"pthread_mutex_init failed\n");
+			goto out;
+		}
 	}
 	else{
 		goto out;
 	}	
-
-	rc = pthread_mutex_init(&mds_ctx->mds_mutex, NULL);
-	if (rc != 0) {
-		LogCrit(COMPONENT_PNFS,
-			"pthread_mutex_init failed\n");
-		goto out;
-	}
-
+	
 out:
 	if (items) {
 		free_ini_config_metadata(items);
@@ -485,29 +484,31 @@ out:
 int cortxfs_pmds_fini(struct kvsfs_fsal_module *kvsfs)
 {
 	int rc = 0;
-
 	dassert(kvsfs != NULL);
+	
+	if (kvsfs->mds_ctx->pnfs_role > CORTXFS_PNFS_DS )
+	{	
+		rc = pthread_mutex_lock(&kvsfs->mds_ctx->mds_mutex);
+		if (rc != 0) {
+			LogCrit(COMPONENT_PNFS, "pthread_mutex_lock failed: %x", rc);
+			goto out;
+		}		
 
-	rc = pthread_mutex_lock(&kvsfs->mds_ctx->mds_mutex);
-	if (rc != 0) {
-		LogCrit(COMPONENT_PNFS, "pthread_mutex_lock failed: %x", rc);
-		goto out;
-	}
+		cortxfs_pmds_cleanup(kvsfs->mds_ctx->mds);
 
-	cortxfs_pmds_cleanup(kvsfs->mds_ctx->mds);
+		rc = pthread_mutex_unlock(&kvsfs->mds_ctx->mds_mutex);
+		if (rc != 0) {
+			LogCrit(COMPONENT_PNFS, "pthread_mutex_unlock failed: %x", rc);
+			goto out;
+		}	
 
-	rc = pthread_mutex_unlock(&kvsfs->mds_ctx->mds_mutex);
-	if (rc != 0) {
-		LogCrit(COMPONENT_PNFS, "pthread_mutex_unlock failed: %x", rc);
-		goto out;
-	}
+		rc = pthread_mutex_destroy(&kvsfs->mds_ctx->mds_mutex);
+		if (rc != 0) {
+			LogCrit(COMPONENT_PNFS, "pthread_mutex_destroy failed: %x", rc);
+			goto out;
+		}
 
-	rc = pthread_mutex_destroy(&kvsfs->mds_ctx->mds_mutex);
-	if (rc != 0) {
-		LogCrit(COMPONENT_PNFS, "pthread_mutex_destroy failed: %x", rc);
-		goto out;
-	}
-
+  	}
 	gsh_free(kvsfs->mds_ctx);
 
 out:
