@@ -113,20 +113,20 @@ extern struct kvsfs_fsal_module KVSFS;
 #define CORTXFS_PNFS_STRIPE_UNIT 0x100000
 /**
  * 1. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_DISABLED:
- * 	kvsfs_fsal_obj_handle.mds_ctx == NULL
+ * 	kvsfs_fsal_obj_handle.pnfs_ctx == NULL
  *
  * 2. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_MDS:
- * 	kvsfs_fsal_obj_handle.mds_ctx != NULL
- * 	cortxfs_pnfs_mds_ctx.NumDataServers >= 0
- * 	cortxfs_pnfs_mds_ctx.NumDataServers reflects no. of nodes in
- * 		cortxfs_pnfs_mds_ctx.mds_ds_list
+ * 	kvsfs_fsal_obj_handle.pnfs_ctx != NULL
+ * 	cortxfs_pnfs_ctx.NumDataServers >= 0
+ * 	cortxfs_pnfs_ctx.NumDataServers reflects no. of nodes in
+ * 		cortxfs_pnfs_ctx.mds_ds_list
  *
  * 3. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_DS:
- * 	kvsfs_fsal_obj_handle.mds_ctx == NULL
+ * 	kvsfs_fsal_obj_handle.pnfs_ctx == NULL
  *
  * 4. If kvsfs_fsal_obj_handle.pnfs_role == PNFS_BOTH:
  * 	conditions for 2 applicable, addition to that:
- * 	cortxfs_pnfs_mds_ctx.mds_ds_list must have atleast one elem, i.e. self
+ * 	cortxfs_pnfs_ctx.mds_ds_list must have atleast one elem, i.e. self
  */
 
 struct cortxfs_pnfs_ds_addr {
@@ -157,7 +157,7 @@ struct cortxfs_pnfs_mds_info {
 	struct cortxfs_pnfs_ds_info *mds_next_ds;
 };
 
-struct cortxfs_pnfs_mds_ctx {
+struct cortxfs_pnfs_ctx {
 	uint32_t pnfs_role;
 	pthread_mutex_t mds_mutex;
 	struct cortxfs_pnfs_mds_info *mds;
@@ -182,7 +182,7 @@ struct cortxfs_gtbl_elm_layout {
  */
 inline uint8_t get_pnfs_role(struct kvsfs_fsal_module *kvsfs)
 {
-	return kvsfs->mds_ctx->pnfs_role;
+	return kvsfs->pnfs_ctx->pnfs_role;
 }
 
 /**
@@ -295,7 +295,7 @@ int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 		   const struct config_item *kvsfs_params)
 {
 	int rc = 0;
-	struct cortxfs_pnfs_mds_ctx *mds_ctx;
+	struct cortxfs_pnfs_ctx *pnfs_ctx;
 	struct cortxfs_pnfs_ds_info *ds;
 	struct cortxfs_pnfs_ds_addr *ds_addr;
 
@@ -311,12 +311,12 @@ int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 
 	dassert(kvsfs != NULL);
 	dassert(kvsfs_params != NULL);
-	dassert(kvsfs->mds_ctx == NULL);
+	dassert(kvsfs->pnfs_ctx == NULL);
 
-	mds_ctx = gsh_calloc(1, sizeof(*mds_ctx));
-	if (mds_ctx == NULL) {
+	pnfs_ctx = gsh_calloc(1, sizeof(*pnfs_ctx));
+	if (pnfs_ctx == NULL) {
 		LogCrit(COMPONENT_PNFS,
-			"gsh_calloc failed: %u", sizeof(*mds_ctx));
+			"gsh_calloc failed: %u", sizeof(*pnfs_ctx));
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -340,29 +340,29 @@ int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 	}
 	pNFS_role = get_string_config_value(items, NULL);
 	if (strncmp(pNFS_role,"MDS",sizeof("MDS")) == 0) {
-		mds_ctx->pnfs_role = CORTXFS_PNFS_MDS;
+		pnfs_ctx->pnfs_role = CORTXFS_PNFS_MDS;
 	} 
 	else if (strncmp(pNFS_role,"DS",sizeof("DS")) == 0) { 
-		mds_ctx->pnfs_role = CORTXFS_PNFS_DS;
+		pnfs_ctx->pnfs_role = CORTXFS_PNFS_DS;
 	}
 	else if (strncmp(pNFS_role,"BOTH",sizeof("BOTH")) == 0) {
-		mds_ctx->pnfs_role = CORTXFS_PNFS_BOTH;
+		pnfs_ctx->pnfs_role = CORTXFS_PNFS_BOTH;
 	}
 	else {
-		mds_ctx->pnfs_role = CORTXFS_PNFS_DISABLED;
+		pnfs_ctx->pnfs_role = CORTXFS_PNFS_DISABLED;
 	}
 	
 	
-	if (mds_ctx->pnfs_role > CORTXFS_PNFS_DS )
+	if (pnfs_ctx->pnfs_role > CORTXFS_PNFS_DS )
 	{	
-		mds_ctx->mds = gsh_calloc(1, sizeof(struct cortxfs_pnfs_mds_info));
-		if (mds_ctx->mds == NULL) {
+		pnfs_ctx->mds = gsh_calloc(1, sizeof(struct cortxfs_pnfs_mds_info));
+		if (pnfs_ctx->mds == NULL) {
 			LogCrit(COMPONENT_PNFS,
-			"gsh_calloc failed: %u", sizeof(*mds_ctx->mds));
+			"gsh_calloc failed: %u", sizeof(*pnfs_ctx->mds));
 			rc = -ENOMEM;
 			goto out;
 		}
-		mds_ctx->mds->stripe_unit = CORTXFS_PNFS_STRIPE_UNIT;	
+		pnfs_ctx->mds->stripe_unit = CORTXFS_PNFS_STRIPE_UNIT;	
 	
 		rc = get_config_item("pNFS","NumDataServers",cfg_items, &items);
 		if (items == NULL){
@@ -373,7 +373,7 @@ int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 		
 		NumDataServers=(int)get_int_config_value(items, 0, 0, NULL);
 		
-		LIST_INIT(&mds_ctx->mds->mds_ds_list);
+		LIST_INIT(&pnfs_ctx->mds->mds_ds_list);
 			
 		for (i=1; i<=NumDataServers; i++)
 		{
@@ -439,12 +439,12 @@ int cortxfs_pmds_ini(struct kvsfs_fsal_module *kvsfs,
 			LIST_INSERT_HEAD(&ds->ds_addr_list, ds_addr,
                                          ds_addr_link);
 
-			LIST_INSERT_HEAD(&mds_ctx->mds->mds_ds_list, ds,
+			LIST_INSERT_HEAD(&pnfs_ctx->mds->mds_ds_list, ds,
                                          ds_link);
-                        mds_ctx->mds->NumDataServers++;
+                        pnfs_ctx->mds->NumDataServers++;
 		}
 
-		rc = pthread_mutex_init(&mds_ctx->mds_mutex, NULL);
+		rc = pthread_mutex_init(&pnfs_ctx->mds_mutex, NULL);
 		if (rc != 0) {
 			LogCrit(COMPONENT_PNFS,
 			"pthread_mutex_init failed\n");
@@ -460,12 +460,12 @@ out:
 		free_ini_config_metadata(items);
 	}
 	if (rc != 0) {
-		if (mds_ctx) {
-			cortxfs_pmds_cleanup(mds_ctx->mds);
-			gsh_free(mds_ctx);
+		if (pnfs_ctx) {
+			cortxfs_pmds_cleanup(pnfs_ctx->mds);
+			gsh_free(pnfs_ctx);
 		}
 	} else {
-		kvsfs->mds_ctx = mds_ctx;
+		kvsfs->pnfs_ctx = pnfs_ctx;
 	}
 
 	return rc;
@@ -486,30 +486,30 @@ int cortxfs_pmds_fini(struct kvsfs_fsal_module *kvsfs)
 	int rc = 0;
 	dassert(kvsfs != NULL);
 	
-	if (kvsfs->mds_ctx->pnfs_role > CORTXFS_PNFS_DS )
+	if (kvsfs->pnfs_ctx->pnfs_role > CORTXFS_PNFS_DS )
 	{	
-		rc = pthread_mutex_lock(&kvsfs->mds_ctx->mds_mutex);
+		rc = pthread_mutex_lock(&kvsfs->pnfs_ctx->mds_mutex);
 		if (rc != 0) {
 			LogCrit(COMPONENT_PNFS, "pthread_mutex_lock failed: %x", rc);
 			goto out;
 		}		
 
-		cortxfs_pmds_cleanup(kvsfs->mds_ctx->mds);
+		cortxfs_pmds_cleanup(kvsfs->pnfs_ctx->mds);
 
-		rc = pthread_mutex_unlock(&kvsfs->mds_ctx->mds_mutex);
+		rc = pthread_mutex_unlock(&kvsfs->pnfs_ctx->mds_mutex);
 		if (rc != 0) {
 			LogCrit(COMPONENT_PNFS, "pthread_mutex_unlock failed: %x", rc);
 			goto out;
-		}	
+		}
 
-		rc = pthread_mutex_destroy(&kvsfs->mds_ctx->mds_mutex);
+		rc = pthread_mutex_destroy(&kvsfs->pnfs_ctx->mds_mutex);
 		if (rc != 0) {
 			LogCrit(COMPONENT_PNFS, "pthread_mutex_destroy failed: %x", rc);
 			goto out;
 		}
 
   	}
-	gsh_free(kvsfs->mds_ctx);
+	gsh_free(kvsfs->pnfs_ctx);
 
 out:
 	return rc;
@@ -524,7 +524,7 @@ out:
  * round robin manner. As of now, it does not support load balancing,
  * in-memory or persistent device map, multiple stripes etc.
  *
- * @param[in]  mds_ctx       Global CORTXFS FSAL's pNFS MDS context
+ * @param[in]  pnfs_ctx      Global CORTXFS FSAL's pNFS context
  * @param[in]  deviceid	     caller passed device id
  * @param[out] stripes_nmemb array 'stripes' no. of entries, 1 as of now
  * @param[out] stripes       array of stripes
@@ -536,7 +536,7 @@ out:
  */
 
 nfsstat4
-cortxfs_pmds_getdevinfo_internal(struct cortxfs_pnfs_mds_ctx *mds_ctx,
+cortxfs_pmds_getdevinfo_internal(struct cortxfs_pnfs_ctx *pnfs_ctx,
 			       const struct pnfs_deviceid *deviceid,
 			       uint32_t *stripes_nmemb,
 			       uint32_t **stripes,
@@ -564,13 +564,13 @@ cortxfs_pmds_getdevinfo_internal(struct cortxfs_pnfs_mds_ctx *mds_ctx,
 	/**
 	 * Only pNFS Meta Data Server is allowed to execute this
 	 */
-	if (mds_ctx->pnfs_role < CORTXFS_PNFS_MDS) {
+	if (pnfs_ctx->pnfs_role < CORTXFS_PNFS_MDS) {
 		LogCrit(COMPONENT_PNFS, "incorrect role: %x",
-			mds_ctx->pnfs_role);
+			pnfs_ctx->pnfs_role);
 		nfs_status = NFS4ERR_NOTSUPP;
 		goto out;
 	}
-	dassert(mds_ctx->mds != NULL);
+	dassert(pnfs_ctx->mds != NULL);
 
 	/**
 	 * Only the deviceid.fsal_id is being used currently
@@ -592,30 +592,30 @@ cortxfs_pmds_getdevinfo_internal(struct cortxfs_pnfs_mds_ctx *mds_ctx,
 		goto out;
 	}
 
-	rc = pthread_mutex_lock(&mds_ctx->mds_mutex);
+	rc = pthread_mutex_lock(&pnfs_ctx->mds_mutex);
 	dassert(rc == 0);
 
-	ds = &mds_ctx->mds->mds_next_ds;
+	ds = &pnfs_ctx->mds->mds_next_ds;
 
 	if (*ds == NULL) {
 		// get an elem
-		if (mds_ctx->mds->NumDataServers == 0) {
+		if (pnfs_ctx->mds->NumDataServers == 0) {
 			// consistency check
 			dassert(LIST_EMPTY(
-				&mds_ctx->mds->mds_ds_list) != True);
+				&pnfs_ctx->mds->mds_ds_list) != True);
 			// atleast the self entry is expected for CORTXFS_PNFS_BOTH
-			dassert(mds_ctx->pnfs_role != CORTXFS_PNFS_BOTH);
+			dassert(pnfs_ctx->pnfs_role != CORTXFS_PNFS_BOTH);
 			LogWarn(COMPONENT_PNFS, "No DS for role: %x",
-				mds_ctx->pnfs_role);
+				pnfs_ctx->pnfs_role);
 			nfs_status = NFS4ERR_NOENT;
 			goto unlock_out;
 		}
-		*ds = LIST_FIRST(&mds_ctx->mds->mds_ds_list);	
+		*ds = LIST_FIRST(&pnfs_ctx->mds->mds_ds_list);	
 	} else {
 		// try to use the next one if available
 		*ds = LIST_NEXT(*ds, ds_link);
 		if (*ds == NULL) {
-			*ds = LIST_FIRST(&mds_ctx->mds->mds_ds_list);
+			*ds = LIST_FIRST(&pnfs_ctx->mds->mds_ds_list);
 		}
 	}
 
@@ -655,7 +655,7 @@ cortxfs_pmds_getdevinfo_internal(struct cortxfs_pnfs_mds_ctx *mds_ctx,
 	}
 
 unlock_out:
-	pthread_mutex_unlock(&mds_ctx->mds_mutex);
+	pthread_mutex_unlock(&pnfs_ctx->mds_mutex);
 	dassert(rc == 0);
 
 out:
@@ -805,7 +805,7 @@ nfsstat4 kvsfs_getdeviceinfo(struct fsal_module *fsal_hdl,
 		goto out;
 	}
 
-	nfs_status = cortxfs_pmds_getdevinfo_internal(KVSFS.mds_ctx, deviceid,
+	nfs_status = cortxfs_pmds_getdevinfo_internal(KVSFS.pnfs_ctx, deviceid,
 						    &stripes_nmemb,
 						    &stripes,
 						    &ds_count,
@@ -940,14 +940,14 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 	struct gsh_buffdesc ds_desc;
 	kvsfs_fsal = (struct kvsfs_fsal_module *)
 		container_of(obj_hdl->fsal, struct kvsfs_fsal_module, fsal);
-	struct cortxfs_pnfs_mds_ctx *mds_ctx = kvsfs_fsal->mds_ctx;
+	struct cortxfs_pnfs_ctx *pnfs_ctx = kvsfs_fsal->pnfs_ctx;
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, arg);
 
-	if (mds_ctx->pnfs_role < CORTXFS_PNFS_MDS) {
+	if (pnfs_ctx->pnfs_role < CORTXFS_PNFS_MDS) {
 		LogCrit(COMPONENT_PNFS,
 			"MDS operation on Non-MDS export");
-		T_EXIT0(mds_ctx->pnfs_role);
+		T_EXIT0(pnfs_ctx->pnfs_role);
 		return NFS4ERR_PNFS_NO_LAYOUT;
 	}
 
@@ -991,7 +991,7 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 	// Back channel based notification is unavailable for now
 	res->signal_available = false;
 
-	stripe_unit = mds_ctx->mds->stripe_unit;
+	stripe_unit = pnfs_ctx->mds->stripe_unit;
 	 util |= stripe_unit | NFL4_UFLG_COMMIT_THRU_MDS;
 
 	if ((util & NFL4_UFLG_STRIPE_UNIT_SIZE_MASK) != stripe_unit) {
