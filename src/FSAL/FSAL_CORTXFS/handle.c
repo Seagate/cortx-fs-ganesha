@@ -102,6 +102,36 @@ cortxfs_fsal_read cortxfs_fsal_reads[2] = {
 	kvsfs_perf_op_read2
 };
 
+
+// Adding support for kvsfs_getattrs
+typedef fsal_status_t (*cortxfs_fsal_getattr)(struct fsal_obj_handle *obj_hdl,
+                                  struct attrlist *attrs_out);
+static inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
+                                           struct attrlist *attrs_out);
+static inline fsal_status_t kvsfs_perf_op_getattrs(struct fsal_obj_handle *obj_hdl,
+                                                   struct attrlist *attrs_out);
+cortxfs_fsal_getattr cortxfs_fsal_getattrs[2] = {
+    kvsfs_getattrs,
+    kvsfs_perf_op_getattrs
+};
+
+// Adding support for kvsfs_setattrs
+typedef fsal_status_t (*cortxfs_fsal_setattr)(struct fsal_obj_handle *obj_hdl,
+                                    bool bypass,
+                                    struct state_t *state,
+                                    struct attrlist *attrs);
+static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
+                                           bool bypass,
+                                           struct state_t *state,
+                                           struct attrlist *attrs);
+static inline fsal_status_t kvsfs_perf_op_setattrs(struct fsal_obj_handle *obj_hdl,
+                                                   bool bypass,
+                                                   struct state_t *state,
+                                                   struct attrlist *attrs);
+cortxfs_fsal_setattr cortxfs_fsal_setattrs[2] = {
+    kvsfs_setattrs,
+    kvsfs_perf_op_setattrs
+};
 /* Internal data types */
 
 /** KVSFS version of a file state object.
@@ -1186,8 +1216,8 @@ out:
 
 /******************************************************************************/
 /* FSAL.getattr */
-static fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
-				    struct attrlist *attrs_out)
+static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
+                                            struct attrlist *attrs_out)
 {
 	struct kvsfs_fsal_obj_handle *myself;
 	struct stat stat;
@@ -1197,6 +1227,7 @@ static fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 	cortxfs_cred_from_op_ctx(&cred);
 	T_ENTER(">>> (%p)", obj_hdl);
+    perfc_trace_state(PES_GEN_INIT);
 
 	if (attrs_out == NULL) {
 		retval = 0;
@@ -1236,7 +1267,21 @@ static fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 out:
 	T_EXIT0(result.major);
+    perfc_trace_attr(PEA_GETATTR_RES_MAJ, result.major);
+    perfc_trace_attr(PEA_GETATTR_RES_MIN, result.minor);
+    perfc_trace_state(PES_GEN_FINI);
 	return result;
+}
+
+static inline fsal_status_t kvsfs_perf_op_getattrs(struct fsal_obj_handle *obj_hdl,
+                                                   struct attrlist *attrs_out)
+{
+    fsal_status_t result;
+    uint64_t myopid = perf_id_gen();
+    perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_GETATTRS);
+    result = kvsfs_getattrs(obj_hdl, attrs_out);
+    perfc_tls_fini();
+    return result;
 }
 
 /******************************************************************************/
@@ -1319,10 +1364,10 @@ static fsal_status_t kvsfs_ftruncate(struct fsal_obj_handle *obj,
 				     struct stat *new_stat, int new_stat_flags);
 
 /* FSAL.setattrs2 */
-fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
-			     bool bypass,
-			     struct state_t *state,
-			     struct attrlist *attrs)
+static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
+                                           bool bypass,
+                                           struct state_t *state,
+                                           struct attrlist *attrs)
 {
 	fsal_status_t result;
 	int rc;
@@ -1333,6 +1378,7 @@ fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 
 	T_ENTER(">>> (obj=%p, bypass=%d, state=%p, attrs=%p)", obj_hdl,
 		bypass, state, attrs);
+    perfc_trace_state(PES_GEN_INIT);
 
 	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
@@ -1406,9 +1452,24 @@ fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 
 out:
 	T_EXIT0(result.major);
+    perfc_trace_attr(PEA_SETATTR_RES_MAJ, result.major);
+    perfc_trace_attr(PEA_SETATTR_RES_MIN, result.minor);
+    perfc_trace_state(PES_GEN_FINI);
 	return result;
 }
 
+static inline fsal_status_t kvsfs_perf_op_setattrs(struct fsal_obj_handle *obj_hdl,
+                                                   bool bypass,
+                                                   struct state_t *state,
+                                                   struct attrlist *attrs)
+{
+    fsal_status_t result;
+    uint64_t myopid = perf_id_gen();
+    perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_SETATTRS);
+    result = kvsfs_setattrs(obj_hdl, bypass, state, attrs);
+    perfc_tls_fini();
+    return result;
+}
 /******************************************************************************/
 /* INTERNAL */
 static fsal_status_t kvsfs_unlink_reg(struct fsal_obj_handle *dir_hdl,
@@ -3156,8 +3217,8 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 	ops->symlink = kvsfs_makesymlink;
 	ops->readlink = kvsfs_readsymlink;
 
-	ops->getattrs = kvsfs_getattrs;
-	ops->setattr2 = kvsfs_setattrs;
+	ops->getattrs = cortxfs_fsal_getattrs[enable_mon];;
+	ops->setattr2 = cortxfs_fsal_setattrs[enable_mon];;
 	ops->link = kvsfs_linkfile;
 	ops->rename = kvsfs_rename;
 	ops->unlink = kvsfs_remove;
