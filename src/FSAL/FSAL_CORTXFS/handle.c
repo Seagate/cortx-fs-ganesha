@@ -144,13 +144,13 @@ typedef void (*cortxfs_fsal_write)(struct fsal_obj_handle *obj_hdl,
 			struct fsal_io_arg *write_arg,
 			void *caller_arg);
 
-static void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
+static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 			bool bypass,
 			fsal_async_cb done_cb,
 			struct fsal_io_arg *write_arg,
 			void *caller_arg);
 
-static void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
+static inline void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
 			 bool bypass,
 			 fsal_async_cb done_cb,
 			 struct fsal_io_arg *write_arg,
