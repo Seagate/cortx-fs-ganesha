@@ -3031,7 +3031,7 @@ static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
  * This is just a wrapper of kvsfs_write2 with added support for TSDB
  * for monitoring performance
  */
-static void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
+static inline void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
 			 bool bypass,
 			 fsal_async_cb done_cb,
 			 struct fsal_io_arg *write_arg,
@@ -3136,7 +3136,7 @@ out:
  * @param[in,out] write_arg	Info about write, passed back in callback
  * @param[in,out] caller_arg	Opaque arg from the caller for callback
  */
-static void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
+static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 			 bool bypass,
 			 fsal_async_cb done_cb,
 			 struct fsal_io_arg *write_arg,
