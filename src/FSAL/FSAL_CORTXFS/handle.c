@@ -132,6 +132,35 @@ cortxfs_fsal_setattr cortxfs_fsal_setattrs[2] = {
     kvsfs_setattrs,
     kvsfs_perf_op_setattrs
 };
+
+/**
+ * CORTXFS PERF ENH:
+ * Adding support for write2 
+ **/
+
+typedef void (*cortxfs_fsal_write)(struct fsal_obj_handle *obj_hdl,
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *write_arg,
+			void *caller_arg);
+
+static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *write_arg,
+			void *caller_arg);
+
+static inline void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
+			 bool bypass,
+			 fsal_async_cb done_cb,
+			 struct fsal_io_arg *write_arg,
+			 void *caller_arg);
+
+cortxfs_fsal_write cortxfs_fsal_writes[2] = {
+	kvsfs_write2,
+	kvsfs_perf_op_write2
+};
+
 /* Internal data types */
 
 /** KVSFS version of a file state object.
@@ -2998,6 +3027,22 @@ static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
 	perfc_tls_fini();
 }
 
+/**
+ * This is just a wrapper of kvsfs_write2 with added support for TSDB
+ * for monitoring performance
+ */
+static inline void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
+			 bool bypass,
+			 fsal_async_cb done_cb,
+			 struct fsal_io_arg *write_arg,
+			 void *caller_arg)
+{
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_WRITE);
+	kvsfs_write2(obj_hdl, bypass, done_cb, write_arg, caller_arg);
+	perfc_tls_fini();
+}
+
 /******************************************************************************/
 /* TODO:CORTXFS: a dummy implementation of FSYNC call */
 static int cfs_fsync(struct cfs_fs *cfs_fs, cfs_cred_t *cred, cfs_ino_t *ino)
@@ -3091,7 +3136,7 @@ out:
  * @param[in,out] write_arg	Info about write, passed back in callback
  * @param[in,out] caller_arg	Opaque arg from the caller for callback
  */
-static void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
+static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 			 bool bypass,
 			 fsal_async_cb done_cb,
 			 struct fsal_io_arg *write_arg,
@@ -3131,6 +3176,11 @@ static void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 		(unsigned long long) write_arg->offset,
 		(unsigned long long) write_arg->iov_count,
 		(unsigned long long) write_arg->iov[0].iov_len);
+
+	perfc_trace_state(PES_GEN_INIT);
+	perfc_trace_attr(PEA_R_OFFSET, write_arg->offset);
+	perfc_trace_attr(PEA_R_IOVC, write_arg->iov_count);
+	perfc_trace_attr(PEA_R_IOVL, write_arg->iov[0].iov_len);
 
 	/* So far, NFS Ganesha always sends only a single buffer in a FSAL.
 	 * We can use this information for keeping write2 implementation
@@ -3172,6 +3222,10 @@ static void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 
 	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 out:
+	perfc_trace_attr(PEA_R_RES_MAJ, result.major);
+	perfc_trace_attr(PEA_R_RES_MIN, result.minor);
+	perfc_trace_state(PES_GEN_FINI);
+
 	T_EXIT0(result.major);
 	PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 	done_cb(obj_hdl, result, write_arg, caller_arg);
@@ -3236,7 +3290,7 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 
 	// File IO
 	ops->read2 = cortxfs_fsal_reads[enable_mon];
-	ops->write2 = kvsfs_write2;
+	ops->write2 = cortxfs_fsal_writes[enable_mon];
 	ops->commit2 = kvsfs_commit2;
 
 	/* ops->lock_op2 is not implemented because this FSAl relies on
