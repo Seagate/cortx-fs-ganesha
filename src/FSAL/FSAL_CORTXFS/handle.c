@@ -665,7 +665,7 @@ static inline fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 		 *  access checks using ACLs are implemented.
 		 */
 
-		perfc_trace_attr(PEA_OTHER_FUNC_CALL, 1);
+		perfc_trace_attr(PEA_TIME_ATTR_START_OTHER_FUNC, 1);
 
 		/* Try to get ACL of the parent directory, and set them
                    on the child directory. */
@@ -695,8 +695,7 @@ static inline fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 				 goto free_attrs;
 		}
 
-		perfc_trace_attr(PEA_OTHER_FUNC_END, 1);
-
+		perfc_trace_attr(PEA_TIME_ATTR_END_OTHER_FUNC, 1);
 	} /* if (kvsfs_is_acl_enabled()) */
 
 free_attrs:
