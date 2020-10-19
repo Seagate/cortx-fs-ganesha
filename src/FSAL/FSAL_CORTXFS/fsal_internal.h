@@ -12,7 +12,7 @@ enum cortxfs_pNFS_server_role {
 };
 
 // forward declaration
-struct cortxfs_pnfs_mds_ctx;
+struct cortxfs_pnfs_ctx;
 
 /* KVSFS FSAL module private storage
  */
@@ -22,7 +22,7 @@ struct kvsfs_fsal_module {
 	struct fsal_staticfsinfo_t fs_info;
 	struct fsal_obj_ops handle_ops;
 	/* pNFS related KVSFS FSAL's global config */
-	struct cortxfs_pnfs_mds_ctx *mds_ctx;
+	struct cortxfs_pnfs_ctx *pnfs_ctx;
 };
 /** KVSFS-related data for a file state object. */
 struct kvsfs_file_state {
