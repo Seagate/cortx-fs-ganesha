@@ -49,8 +49,7 @@ function create_fs {
 	[ $? -ne 0 ] && die "Failed to create $DEFAULT_FS"
 	
 	# Add pNFS options.
-	DEFAULT_EXPORT_OPTION+="pnfs_enabled=$pNFS_ENABLED,"
-	DEFAULT_EXPORT_OPTION+="data_server=$pNFS_DATA_SERVER"
+	DEFAULT_EXPORT_OPTION+="pnfs_enabled=$pNFS_ENABLED"
 
 	echo -e "\nExporting default file system $DEFAULT_FS $DEFAULT_EXPORT_OPTION ..."
 	run $CORTXFS_FS_CLI endpoint create $DEFAULT_FS $DEFAULT_EXPORT_OPTION
@@ -344,16 +343,7 @@ EXPORT {
                 Name  = CORTX-FS;
                 cortxfs_config = $CORTXFS_CONF;
 
-                PNFS {
-                        Stripe_Unit = 8192;
-                        pnfs_enabled = $pNFS_ENABLED;
-                        Nb_Dataserver = 1;
-                        DS1 {
-                                DS_Addr = $pNFS_DATA_SERVER;
-                                DS_Port = 2049;
-                        }
-                }
-        }
+	}
 
         # Allowed security types for this export
         SecType = sys;
@@ -373,7 +363,7 @@ EXPORT {
                 # Restrict the protocols that may use this export.  This cannot allow
                 # access that is denied in NFS_CORE_PARAM.
                 protocols = 4;
-        }
+	}
 }
 EOM
 	echo -e "\nStarting NFS Ganesha"
