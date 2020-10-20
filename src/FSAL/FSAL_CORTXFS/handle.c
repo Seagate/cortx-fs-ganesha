@@ -75,7 +75,7 @@
 
 /**
  * CORTXFS PERF ENH:
- * Adding support for read2 
+ * Adding support for read2, mkdir, readdir, lookup 
  * TODO: Similar change will be needed for rest of the FSAL handlers
  **/
 
@@ -92,51 +92,52 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 			void *caller_arg);
 
 static void kvsfs_perf_op_read2(struct fsal_obj_handle *obj_hdl,
-			 bool bypass,
-			 fsal_async_cb done_cb,
-			 struct fsal_io_arg *read_arg,
-			 void *caller_arg);
+			bool bypass,
+			fsal_async_cb done_cb,
+			struct fsal_io_arg *read_arg,
+			void *caller_arg);
 
-cortxfs_fsal_read cortxfs_fsal_reads[2] = {
-	kvsfs_read2,
-	kvsfs_perf_op_read2
-};
+typedef fsal_status_t (*cortxfs_fsal_mkdir)(struct fsal_obj_handle *dir_hdl,
+			const char *name, struct attrlist *attrs_in,
+			struct fsal_obj_handle **handle,
+			struct attrlist *attrs_out);
 
+static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
+			const char *name, struct attrlist *attrs_in,
+			struct fsal_obj_handle **handle,
+			struct attrlist *attrs_out);
 
-// Adding support for kvsfs_getattrs
-typedef fsal_status_t (*cortxfs_fsal_getattr)(struct fsal_obj_handle *obj_hdl,
-                                  struct attrlist *attrs_out);
-static inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
-                                           struct attrlist *attrs_out);
-static inline fsal_status_t kvsfs_perf_op_getattrs(struct fsal_obj_handle *obj_hdl,
-                                                   struct attrlist *attrs_out);
-cortxfs_fsal_getattr cortxfs_fsal_getattrs[2] = {
-    kvsfs_getattrs,
-    kvsfs_perf_op_getattrs
-};
+static fsal_status_t kvsfs_perf_op_mkdir(struct fsal_obj_handle *dir_hdl,
+			const char *name, struct attrlist *attrs_in,
+			struct fsal_obj_handle **handle,
+			struct attrlist *attrs_out);
 
-// Adding support for kvsfs_setattrs
-typedef fsal_status_t (*cortxfs_fsal_setattr)(struct fsal_obj_handle *obj_hdl,
-                                    bool bypass,
-                                    struct state_t *state,
-                                    struct attrlist *attrs);
-static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
-                                           bool bypass,
-                                           struct state_t *state,
-                                           struct attrlist *attrs);
-static inline fsal_status_t kvsfs_perf_op_setattrs(struct fsal_obj_handle *obj_hdl,
-                                                   bool bypass,
-                                                   struct state_t *state,
-                                                   struct attrlist *attrs);
-cortxfs_fsal_setattr cortxfs_fsal_setattrs[2] = {
-    kvsfs_setattrs,
-    kvsfs_perf_op_setattrs
-};
+typedef fsal_status_t (*cortxfs_fsal_readdir)(struct fsal_obj_handle *dir_hdl,
+			fsal_cookie_t *whence, void *dir_state,
+			fsal_readdir_cb cb, attrmask_t attrmask,
+			bool *eof);
 
-/**
- * CORTXFS PERF ENH:
- * Adding support for write2 
- **/
+static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
+			fsal_cookie_t *whence, void *dir_state,
+			fsal_readdir_cb cb, attrmask_t attrmask,
+			bool *eof);
+
+static fsal_status_t kvsfs_perf_op_readdir(struct fsal_obj_handle *dir_hdl,
+			fsal_cookie_t *whence, void *dir_state,
+			fsal_readdir_cb cb, attrmask_t attrmask,
+			bool *eof);
+
+typedef fsal_status_t (*cortxfs_fsal_lookup)(struct fsal_obj_handle *parent_hdl,
+			const char *name, struct fsal_obj_handle **handle,
+			struct attrlist *attrs_out);
+
+static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
+			const char *name, struct fsal_obj_handle **handle,
+			struct attrlist *attrs_out);
+
+static fsal_status_t kvsfs_perf_op_lookup(struct fsal_obj_handle *parent_hdl,
+			const char *name, struct fsal_obj_handle **handle,
+			struct attrlist *attrs_out);
 
 typedef void (*cortxfs_fsal_write)(struct fsal_obj_handle *obj_hdl,
 			bool bypass,
@@ -156,9 +157,61 @@ static inline void kvsfs_perf_op_write2(struct fsal_obj_handle *obj_hdl,
 			 struct fsal_io_arg *write_arg,
 			 void *caller_arg);
 
+// Adding support for kvsfs_getattrs
+typedef fsal_status_t (*cortxfs_fsal_getattr)(struct fsal_obj_handle *obj_hdl,
+                                  struct attrlist *attrs_out);
+static inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
+                                           struct attrlist *attrs_out);
+static inline fsal_status_t kvsfs_perf_op_getattrs(struct fsal_obj_handle *obj_hdl,
+                                                   struct attrlist *attrs_out);
+
+// Adding support for kvsfs_setattrs
+typedef fsal_status_t (*cortxfs_fsal_setattr)(struct fsal_obj_handle *obj_hdl,
+                                    bool bypass,
+                                    struct state_t *state,
+                                    struct attrlist *attrs);
+static fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
+                                           bool bypass,
+                                           struct state_t *state,
+                                           struct attrlist *attrs);
+static fsal_status_t kvsfs_perf_op_setattrs(struct fsal_obj_handle *obj_hdl,
+                                                   bool bypass,
+                                                   struct state_t *state,
+                                                   struct attrlist *attrs);
+
+cortxfs_fsal_getattr cortxfs_fsal_getattrs[2] = {
+    kvsfs_getattrs,
+    kvsfs_perf_op_getattrs
+};
+
+cortxfs_fsal_setattr cortxfs_fsal_setattrs[2] = {
+    kvsfs_setattrs,
+    kvsfs_perf_op_setattrs
+};
+
+cortxfs_fsal_read cortxfs_fsal_reads[2] = {
+	kvsfs_read2,
+	kvsfs_perf_op_read2
+};
+
 cortxfs_fsal_write cortxfs_fsal_writes[2] = {
 	kvsfs_write2,
 	kvsfs_perf_op_write2
+};
+
+cortxfs_fsal_mkdir cortxfs_fsal_mkdirs[2] = {
+	kvsfs_mkdir,
+	kvsfs_perf_op_mkdir
+};
+
+cortxfs_fsal_readdir cortxfs_fsal_readdirs[2] = {
+	kvsfs_readdir,
+	kvsfs_perf_op_readdir
+};
+
+cortxfs_fsal_lookup cortxfs_fsal_lookups[2] = {
+	kvsfs_lookup,
+	kvsfs_perf_op_lookup
 };
 
 /* Internal data types */
@@ -351,7 +404,7 @@ inline void cortxfs_cred_from_op_ctx(cfs_cred_t *out)
 
 /******************************************************************************/
 /* FSAL.lookup */
-static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
+static inline fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 				  const char *name,
 				  struct fsal_obj_handle **handle,
 				  struct attrlist *attrs_out)
@@ -363,12 +416,15 @@ static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 	struct kvsfs_fsal_export *export =
 	    container_of(op_ctx->fsal_export, struct kvsfs_fsal_export, export);
 
-	cortxfs_cred_from_op_ctx(&cred);
 
 	T_ENTER(">>> (%p, %s)", parent_hdl, name);
 
 	assert(name);
 	assert(strlen(name) > 0);
+
+	perfc_trace_state(PES_GEN_INIT);
+
+	cortxfs_cred_from_op_ctx(&cred);
 
 	if (!fsal_obj_handle_is(parent_hdl, DIRECTORY)) {
 		LogCrit(COMPONENT_FSAL,
@@ -396,8 +452,28 @@ static fsal_status_t kvsfs_lookup(struct fsal_obj_handle *parent_hdl,
 	if (object) {
 		cfs_fh_destroy(object);
 	}
+
+	perfc_trace_state(PES_GEN_FINI);
+
 	T_EXIT0(-rc);
 	return fsalstat(posix2fsal_error(-rc), -rc);
+}
+
+/* Wrapper of kvsfs_lookup with added support for TSDB for performance
+ * monitoring
+ */
+static fsal_status_t kvsfs_perf_op_lookup(struct fsal_obj_handle *parent_hdl,
+				  const char *name,
+				  struct fsal_obj_handle **handle,
+				  struct attrlist *attrs_out)
+{
+	fsal_status_t result;
+	int64_t myopid = perf_id_gen();
+
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_LOOKUP);
+	result = kvsfs_lookup(parent_hdl, name, handle, attrs_out);
+	perfc_tls_fini();
+	return result;
 }
 
 /******************************************************************************/
@@ -530,7 +606,7 @@ out:
 
 /******************************************************************************/
 /* FSAL.mkdir - Create a directory */
-static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
+static inline fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 				const char *name, struct attrlist *attrs_in,
 				struct fsal_obj_handle **handle,
 				struct attrlist *attrs_out)
@@ -543,6 +619,8 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 	mode_t unix_mode;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	struct attrlist parent_attrs = {0};
+
+	perfc_trace_state(PES_GEN_INIT);
 
 	cortxfs_cred_from_op_ctx(&cred);
 	/* TODO:PERF: Check if it can be converted into an assert pre-cond */
@@ -587,6 +665,8 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 		 *  access checks using ACLs are implemented.
 		 */
 
+		perfc_trace_attr(PEA_TIME_ATTR_START_OTHER_FUNC, 1);
+
 		/* Try to get ACL of the parent directory, and set them
                    on the child directory. */
 		fsal_prepare_attrs(&parent_attrs, ATTR_ACL);
@@ -614,13 +694,34 @@ static fsal_status_t kvsfs_mkdir(struct fsal_obj_handle *dir_hdl,
 				        "Set acl on dir %p failed", hdl);
 				 goto free_attrs;
 		}
+
+		perfc_trace_attr(PEA_TIME_ATTR_END_OTHER_FUNC, 1);
 	} /* if (kvsfs_is_acl_enabled()) */
 
 free_attrs:
 	fsal_release_attrs(&parent_attrs);
 
 out:
+	perfc_trace_state(PES_GEN_FINI);
+
 	T_EXIT0(status.major);
+	return status;
+}
+
+/* Wrapper of kvsfs_mkdir with added support for TSDB for performance
+ * monitoring
+ */
+static fsal_status_t kvsfs_perf_op_mkdir(struct fsal_obj_handle *dir_hdl,
+				const char *name, struct attrlist *attrs_in,
+				struct fsal_obj_handle **handle,
+				struct attrlist *attrs_out)
+{
+	uint64_t myopid = perf_id_gen();
+	fsal_status_t status;
+
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_MKDIR);
+	status = kvsfs_mkdir(dir_hdl, name, attrs_in, handle, attrs_out);
+	perfc_tls_fini();
 	return status;
 }
 
@@ -907,11 +1008,10 @@ err_out:
 	return retval;
 }
 
-static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
+static inline fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 				  fsal_cookie_t *whence, void *dir_state,
 				  fsal_readdir_cb cb, attrmask_t attrmask,
 				  bool *eof)
-
 {
 	struct kvsfs_fsal_obj_handle *obj;
 	cfs_cred_t cred;
@@ -935,6 +1035,8 @@ static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 
 	struct cfs_fs *cfs_fs = NULL;
 	int rc;
+
+	perfc_trace_state(PES_GEN_INIT);
 
 	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
@@ -980,8 +1082,27 @@ static fsal_status_t kvsfs_readdir(struct fsal_obj_handle *dir_hdl,
 	*eof = readdir_ctx.eof;
 
  out:
+	perfc_trace_state(PES_GEN_FINI);
+
 	T_EXIT0(-rc);
 	return fsalstat(posix2fsal_error(-rc), -rc);
+}
+
+/* Wrapper of kvsfs_readdir with added support for TSDB for performance
+ * monitoring
+ */  
+static fsal_status_t kvsfs_perf_op_readdir(struct fsal_obj_handle *dir_hdl,
+				  fsal_cookie_t *whence, void *dir_state,
+				  fsal_readdir_cb cb, attrmask_t attrmask,
+				  bool *eof)
+{
+	uint64_t myopid = perf_id_gen();
+	fsal_status_t status;
+
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_READDIR);
+	status = kvsfs_readdir(dir_hdl, whence, dir_state, cb, attrmask, eof);
+	perfc_tls_fini();
+	return status;
 }
 
 /******************************************************************************/
@@ -1582,6 +1703,10 @@ static fsal_status_t kvsfs_rmdir(struct fsal_obj_handle *dir_hdl,
 	cfs_cred_t cred;
 	struct kvsfs_fsal_obj_handle *parent;
 	int rc;
+	uint64_t myopid = perf_id_gen();
+
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_RMDIR);
+	perfc_trace_state(PES_GEN_INIT);
 
 	cortxfs_cred_from_op_ctx(&cred);
 	parent = container_of(dir_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
@@ -1603,6 +1728,9 @@ static fsal_status_t kvsfs_rmdir(struct fsal_obj_handle *dir_hdl,
 	}
 
 out:
+	perfc_trace_state(PES_GEN_FINI);
+	perfc_tls_fini();
+
 	return fsalstat(posix2fsal_error(-rc), -rc);
 }
 
@@ -3263,9 +3391,9 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 
 	// Namespace
 	ops->release = release;
-	ops->lookup = kvsfs_lookup;
-	ops->readdir = kvsfs_readdir;
-	ops->mkdir = kvsfs_mkdir;
+	ops->lookup = cortxfs_fsal_lookups[enable_mon];
+	ops->readdir = cortxfs_fsal_readdirs[enable_mon];
+	ops->mkdir = cortxfs_fsal_mkdirs[enable_mon];
 	/* mknode is unsupported by KVSFS */
 
 	ops->symlink = kvsfs_makesymlink;
@@ -3303,7 +3431,7 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 	 */
 
 	ops->lease_op2 = kvsfs_lease_op2;
-   handle_ops_pnfs(ops);
+	handle_ops_pnfs(ops);
 	/* TODO:PORTING: Disable xattrs support */
 #if 0
 	/* xattr related functions */
