@@ -180,6 +180,105 @@ static fsal_status_t kvsfs_perf_op_setattrs(struct fsal_obj_handle *obj_hdl,
                                                    struct state_t *state,
                                                    struct attrlist *attrs);
 
+typedef fsal_status_t (*cortxfs_fsal_open2)(struct fsal_obj_handle *obj_hdl,
+                                            struct state_t *state,
+                                            fsal_openflags_t openflags,
+                                            enum fsal_create_mode createmode,
+                                            const char *name,
+                                            struct attrlist *attrs_in,
+                                            fsal_verifier_t verifier,
+                                            struct fsal_obj_handle **new_obj,
+                                            struct attrlist *attrs_out,
+                                            bool *caller_perm_check);
+
+static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
+                                 struct state_t *state,
+                                 fsal_openflags_t openflags,
+                                 enum fsal_create_mode createmode,
+                                 const char *name,
+                                 struct attrlist *attrs_in,
+                                 fsal_verifier_t verifier,
+                                 struct fsal_obj_handle **new_obj,
+                                 struct attrlist *attrs_out,
+                                 bool *caller_perm_check);
+
+static fsal_status_t kvsfs_perf_op_open2(struct fsal_obj_handle *obj_hdl,
+                                         struct state_t *state,
+                                         fsal_openflags_t openflags,
+                                         enum fsal_create_mode createmode,
+                                         const char *name,
+                                         struct attrlist *attrs_in,
+                                         fsal_verifier_t verifier,
+                                         struct fsal_obj_handle **new_obj,
+                                         struct attrlist *attrs_out,
+                                         bool *caller_perm_check);
+
+typedef fsal_openflags_t (*cortxfs_fsal_status2)(struct fsal_obj_handle *obj_hdl,
+                                                  struct state_t *state);
+
+static fsal_openflags_t kvsfs_status2(struct fsal_obj_handle *obj_hdl,
+                                              struct state_t *state);
+
+static fsal_openflags_t kvsfs_perf_op_status2(struct fsal_obj_handle *obj_hdl,
+                                              struct state_t *state);
+
+
+typedef fsal_status_t (*cortxfs_fsal_close2)(struct fsal_obj_handle *obj_hdl,
+                                                 struct state_t *state);
+
+static fsal_status_t kvsfs_close2(struct fsal_obj_handle *obj_hdl,
+                                     struct state_t *state);
+
+static fsal_status_t kvsfs_perf_op_close2(struct fsal_obj_handle *obj_hdl,
+                                             struct state_t *state);
+
+typedef fsal_status_t (*cortxfs_fsal_reopen2)(struct fsal_obj_handle *obj_hdl,
+                                   struct state_t *state_hdl,
+                                   fsal_openflags_t openflags);
+
+static fsal_status_t kvsfs_reopen2(struct fsal_obj_handle *obj_hdl,
+                                   struct state_t *state_hdl,
+                                   fsal_openflags_t openflags);
+
+static fsal_status_t kvsfs_perf_op_reopen2(struct fsal_obj_handle *obj_hdl,
+                                   struct state_t *state_hdl,
+                                   fsal_openflags_t openflags);
+
+typedef fsal_status_t (*cortxfs_fsal_commit2)(struct fsal_obj_handle *obj_hdl,
+                                             off_t offset, size_t len);
+
+static fsal_status_t kvsfs_commit2(struct fsal_obj_handle *obj_hdl,
+                                   off_t offset, size_t len);
+
+static fsal_status_t kvsfs_perf_op_commit2(struct fsal_obj_handle *obj_hdl,
+                                           off_t offset, size_t len);
+
+
+cortxfs_fsal_commit2 cortxfs_fsal_commits[2] = {
+    kvsfs_commit2,
+    kvsfs_perf_op_commit2
+};
+
+cortxfs_fsal_reopen2 cortxfs_fsal_reopens[2] = {
+    kvsfs_reopen2,
+    kvsfs_perf_op_reopen2
+};
+
+cortxfs_fsal_close2 cortxfs_fsal_closes[2] = {
+    kvsfs_close2,
+    kvsfs_perf_op_close2
+};
+
+cortxfs_fsal_status2 cortxfs_fsal_statuses[2] = {
+    kvsfs_status2,
+    kvsfs_perf_op_status2
+};
+
+cortxfs_fsal_open2 cortxfs_fsal_opens[2] = {
+    kvsfs_open2,
+    kvsfs_perf_op_open2
+};
+
 cortxfs_fsal_getattr cortxfs_fsal_getattrs[2] = {
     kvsfs_getattrs,
     kvsfs_perf_op_getattrs
@@ -1927,6 +2026,8 @@ static fsal_status_t kvsfs_share_try_new_state(struct kvsfs_fsal_obj_handle *obj
 {
 	fsal_status_t status;
 
+	perfc_trace_inii(PFT_SHARE_TRY_NEW_STATE, PEM_FSAL_TO_NFS);
+
 	PTHREAD_RWLOCK_wrlock(&obj->obj_handle.obj_lock);
 
 	status = check_share_conflict(&obj->share, new_openflags, false);
@@ -1938,6 +2039,7 @@ static fsal_status_t kvsfs_share_try_new_state(struct kvsfs_fsal_obj_handle *obj
 
 out:
 	PTHREAD_RWLOCK_unlock(&obj->obj_handle.obj_lock);
+	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return status;
 }
 
@@ -1978,10 +2080,14 @@ static fsal_status_t cfs_file_open(struct kvsfs_file_state *state,
 				   fsal_openflags_t openflags,
 				   struct kvsfs_fsal_obj_handle *obj)
 {
+	fsal_status_t result;
+	perfc_trace_inii(PFT_CFS_FILE_OPEN, PEM_FSAL_TO_NFS);
 	(void) state;
 	(void) openflags;
 	(void) obj;
-	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
+	perfc_trace_finii(PERFC_TLS_POP_VERIFY);
+	return result;
 }
 
 /* A wrapper for a CLOSE-like call at the cortxfs layer which lets the KVS
@@ -1991,9 +2097,13 @@ static fsal_status_t cfs_file_open(struct kvsfs_file_state *state,
 static fsal_status_t cfs_file_close(struct kvsfs_file_state *state,
 				    struct kvsfs_fsal_obj_handle *obj)
 {
+	fsal_status_t result;
+	perfc_trace_inii(PFT_CFS_FILE_CLOSE, PEM_FSAL_TO_NFS);
 	(void) state;
 	(void) obj;
-	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
+	perfc_trace_finii(PERFC_TLS_POP_VERIFY);
+	return result;
 }
 
 /* Opens and re-opens a file handle and creates (or re-uses) a file state
@@ -2006,6 +2116,7 @@ static fsal_status_t kvsfs_file_state_open(struct kvsfs_file_state *state,
 {
 	fsal_status_t status;
 
+	perfc_trace_inii(PFT_FILE_STATE_OPEN, PEM_FSAL_TO_NFS);
 	if (!is_reopen) {
 		/* we cannot open the same state twice unless it is a reopen*/
 		assert(kvsfs_file_state_invariant_closed(state));
@@ -2042,6 +2153,7 @@ out:
 		assert(kvsfs_file_state_invariant_open(state));
 	}
 
+	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return status;
 }
 
@@ -2351,6 +2463,7 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_file_state *fd;
 	struct stat stat;
 
+	perfc_trace_inii(PFT_OPEN2_BY_HANDLE, PEM_FSAL_TO_NFS);
 	cortxfs_cred_from_op_ctx(&cred);
 	fd = &container_of(state, struct kvsfs_state_fd, state)->kvsfs_fd;
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
@@ -2380,6 +2493,7 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	}
 
 out:
+	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return status;
 }
 
@@ -2395,6 +2509,7 @@ static fsal_status_t kvsfs_open2_by_name(struct fsal_obj_handle *parent_obj_hdl,
 	fsal_status_t result;
 	struct fsal_obj_handle *obj = NULL;
 
+	perfc_trace_inii(PFT_OPEN2_BY_NAME, PEM_FSAL_TO_NFS);
 	assert(name);
 
 	result = parent_obj_hdl->obj_ops->lookup(parent_obj_hdl, name, &obj,
@@ -2420,6 +2535,7 @@ free_obj:
 		obj->obj_ops->release(obj);
 	}
 out:
+	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return result;
 }
 
@@ -2498,6 +2614,7 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 
 	T_ENTER(">>> (parent=%p, state=%p, name=%s, attrs_in=%p, attrs_out=%p)",
 		parent_obj_hdl, state, name, attrs_in, attrs_out);
+	perfc_trace_inii(PFT_CREATE_UNCHECKED, PEM_FSAL_TO_NFS);
 
 	/* Ganesha sets ATTR_MODE even if the client didn't set it */
 	assert(FSAL_TEST_MASK(attrs_in->valid_mask, ATTR_MODE));
@@ -2559,6 +2676,7 @@ out:
 		obj_hdl->obj_ops->release(obj_hdl);
 	}
 	T_EXIT0(result.major);
+	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return result;
 }
 
@@ -2722,6 +2840,8 @@ static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 		name, attrs_in, verifier[0], new_obj,
 		attrs_out, caller_perm_check);
 
+	perfc_trace_state(PES_GEN_INIT);
+
 	T_TRACE("openflags: read=%d, write=%d, trunc=%d",
 		(openflags & FSAL_O_READ),
 		(openflags & FSAL_O_WRITE),
@@ -2848,6 +2968,29 @@ static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 
 out:
 	T_EXIT0(result.major);
+	perfc_trace_attr(PEA_OPEN_RES_MAJ, result.major);
+	perfc_trace_attr(PEA_OPEN_RES_MIN, result.minor);
+	perfc_trace_state(PES_GEN_FINI);
+	return result;
+}
+
+static fsal_status_t kvsfs_perf_op_open2(struct fsal_obj_handle *obj_hdl,
+                                 struct state_t *state,
+                                 fsal_openflags_t openflags,
+                                 enum fsal_create_mode createmode,
+                                 const char *name,
+                                 struct attrlist *attrs_in,
+                                 fsal_verifier_t verifier,
+                                 struct fsal_obj_handle **new_obj,
+                                 struct attrlist *attrs_out,
+                                 bool *caller_perm_check)
+{
+	fsal_status_t result;
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_OPEN);
+	result = kvsfs_open2(obj_hdl, state, openflags, createmode, name, attrs_in,
+                         verifier, new_obj, attrs_out, caller_perm_check);
+	perfc_tls_fini();
 	return result;
 }
 
@@ -2866,6 +3009,8 @@ static fsal_status_t kvsfs_reopen2(struct fsal_obj_handle *obj_hdl,
 	T_ENTER(">>> (obj=%p, state=%p, openflags=%d)",
 		obj_hdl, state_hdl, openflags);
 
+	perfc_trace_state(PES_GEN_INIT);
+
 	T_TRACE("openflags: read=%d, write=%d, trunc=%d",
 		(openflags & FSAL_O_READ),
 		(openflags & FSAL_O_WRITE),
@@ -2881,9 +3026,23 @@ static fsal_status_t kvsfs_reopen2(struct fsal_obj_handle *obj_hdl,
 
 out:
 	T_EXIT0(status.major);
+	perfc_trace_attr(PEA_REOPEN_RES_MAJ, status.major);
+	perfc_trace_attr(PEA_REOPEN_RES_MIN, status.minor);
+	perfc_trace_state(PES_GEN_FINI);
 	return status;
 }
 
+static fsal_status_t kvsfs_perf_op_reopen2(struct fsal_obj_handle *obj_hdl,
+                                   struct state_t *state_hdl,
+                                   fsal_openflags_t openflags)
+{
+	fsal_status_t result;
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_REOPEN);
+	result = kvsfs_reopen2(obj_hdl, state_hdl, openflags);
+	perfc_tls_fini();
+	return result;
+}
 /******************************************************************************/
 /* FSAL.status2 */
 static fsal_openflags_t kvsfs_status2(struct fsal_obj_handle *obj_hdl,
@@ -2893,14 +3052,28 @@ static fsal_openflags_t kvsfs_status2(struct fsal_obj_handle *obj_hdl,
 
 	T_ENTER(">>> (obj=%p, state=%p)", obj_hdl, state);
 
+	perfc_trace_state(PES_GEN_INIT);
+
 	assert(state != NULL);
 
 	state_fd = container_of(state, struct kvsfs_state_fd, state);
 
 	T_EXIT0(0);
+
+	perfc_trace_state(PES_GEN_FINI);
 	return state_fd->kvsfs_fd.openflags;
 }
 
+static fsal_openflags_t kvsfs_perf_op_status2(struct fsal_obj_handle *obj_hdl,
+                                              struct state_t *state)
+{
+	fsal_openflags_t result;
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_STATUS);
+	result = kvsfs_status2(obj_hdl, state);
+	perfc_tls_fini();
+	return result;
+}
 /******************************************************************************/
 /* FSAL.close2 */
 
@@ -2986,6 +3159,8 @@ static fsal_status_t kvsfs_close2(struct fsal_obj_handle *obj_hdl,
 	T_ENTER(">>> (obj=%p, state=%p, type=%s)", obj_hdl, state,
 		state_type2str(state->state_type));
 
+	perfc_trace_state(PES_GEN_INIT);
+
 	state_fd = container_of(state, struct kvsfs_state_fd, state);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
@@ -3027,9 +3202,22 @@ static fsal_status_t kvsfs_close2(struct fsal_obj_handle *obj_hdl,
 	}
 
 	T_EXIT0(result.major);
+	perfc_trace_attr(PEA_CLOSE_RES_MAJ, result.major);
+	perfc_trace_attr(PEA_CLOSE_RES_MIN, result.minor);
+	perfc_trace_state(PES_GEN_FINI);
 	return result;
 }
 
+static fsal_status_t kvsfs_perf_op_close2(struct fsal_obj_handle *obj_hdl,
+                                  struct state_t *state)
+{
+	fsal_status_t result;
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_CLOSE);
+	result = kvsfs_close2(obj_hdl, state);
+	perfc_tls_fini();
+	return result;
+}
 /******************************************************************************/
 /* FSAL.close */
 /* We don't support NFSv3 but NFS Ganesha still might want to close() a file
@@ -3366,14 +3554,28 @@ out:
 static fsal_status_t kvsfs_commit2(struct fsal_obj_handle *obj_hdl,
 				   off_t offset, size_t len)
 {
+	fsal_status_t result;
 	T_ENTER0;
+	perfc_trace_state(PES_GEN_INIT);
 	(void) obj_hdl;
 	(void) offset;
 	(void) len;
+	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	T_EXIT0(0);
-	return fsalstat(ERR_FSAL_NO_ERROR, 0);
+	perfc_trace_state(PES_GEN_FINI);
+	return result;
 }
 
+static fsal_status_t kvsfs_perf_op_commit2(struct fsal_obj_handle *obj_hdl,
+                                           off_t offset, size_t len)
+{
+	fsal_status_t result;
+	uint64_t myopid = perf_id_gen();
+	perfc_tls_ini(TSDB_MOD_FSUSER, myopid, PFT_FSAL_COMMIT);
+	result = kvsfs_commit2(obj_hdl, offset, len);
+	perfc_tls_fini();
+	return result;
+}
 /******************************************************************************/
 
 void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
@@ -3411,16 +3613,16 @@ void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 	ops->handle_to_key = kvsfs_handle_to_key;
 
 	// File state
-	ops->open2 = kvsfs_open2;
-	ops->status2 = kvsfs_status2;
-	ops->close2 = kvsfs_close2;
+	ops->open2 = cortxfs_fsal_opens[enable_mon];
+	ops->status2 = cortxfs_fsal_statuses[enable_mon];
+	ops->close2 = cortxfs_fsal_closes[enable_mon];
 	ops->close = kvsfs_close;
-	ops->reopen2 = kvsfs_reopen2;
+	ops->reopen2 = cortxfs_fsal_reopens[enable_mon];
 
 	// File IO
 	ops->read2 = cortxfs_fsal_reads[enable_mon];
 	ops->write2 = cortxfs_fsal_writes[enable_mon];
-	ops->commit2 = kvsfs_commit2;
+	ops->commit2 = cortxfs_fsal_commits[enable_mon];
 
 	/* ops->lock_op2 is not implemented because this FSAl relies on
 	 * NFS Ganesha byte-range lock handling.
