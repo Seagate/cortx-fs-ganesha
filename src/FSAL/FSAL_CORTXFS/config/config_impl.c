@@ -345,7 +345,7 @@ static void export_to_buffer(struct export_block *block,
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	snprintf(str, sizeof(str), "\tPath = %s;\n", block->path.s_str);
+	snprintf(str, sizeof(str), "\tPath = /%s;\n", block->path.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
