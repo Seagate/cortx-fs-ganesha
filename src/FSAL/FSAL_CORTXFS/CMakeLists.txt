@@ -22,6 +22,7 @@ set(DEFAULT_GANESHASRC "")
 set(DEFAULT_GANESHABUILD "")
 set(DEFAULT_CAPIINC "")
 set(DEFAULT_NSALINC "")
+set(DEFAULT_DSALINC "")
 set(DEFAULT_LIBNSAL "")
 set(DEFAULT_CORTXFSINC "")
 set(DEFAULT_LIBCORTXFS "")
@@ -42,6 +43,7 @@ set(GANESHABUILD ${DEFAULT_GANESHABUILD} CACHE PATH "Path to NFS-Ganesha Build (
 set(FSAL_DESTINATION "/usr/lib64/ganesha" CACHE PATH "Target directory for FSAL")
 set(CAPIINC ${DEFAULT_CAPIINC} CACHE PATH "Path to CAPI")
 set(NSALINC ${DEFAULT_NSALINC} CACHE PATH "Path to folder with nsal headers")
+set(DSALINC ${DEFAULT_DSALINC} CACHE PATH "Path to folder with nsal headers")
 set(LIBNSAL ${DEFAULT_LIBNSAL} CACHE PATH "Path to folder with libcortx-nsal.so")
 
 set(CORTXFSINC ${DEFAULT_CORTXFSINC} CACHE PATH "Path to folder with nsal headers")
@@ -60,10 +62,18 @@ include_directories(${GANESHASRC}/libntirpc/ntirpc)
 include_directories(${GANESHABUILD}/include)
 include_directories(${GANESHASRC}/include)
 include_directories(${GANESHASRC}/include/FSAL)
+include_directories("/usr/include/motr")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I${CAPIINC}")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-unused-variable")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-unused-variable -DM0_INTERNAL='' -DM0_EXTERN=extern -Wno-attributes -D_REENTRANT -D_GNU_SOURCE ")
+
+# Turns on ADDB-based TDSB wrappers.
+# When this flag is disabled, perfc TSDB code will be turned off.
+# When this flag is enabled, the utils module has to be
+# compiled with this flag enabled otherwise some of
+# the function calls will be undefined.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_TSDB_ADDB")
 
 # Turns on ADDB-based TDSB wrappers.
 # When this flag is disabled, perfc TSDB code will be turned off.
@@ -96,6 +106,8 @@ link_directories(${LIBCORTXUTILS})
 
 include_directories(${NSALINC})
 link_directories(${LIBNSAL})
+
+include_directories(${DSALINC})
 
 include_directories(${CORTXFSINC})
 link_directories(${LIBCORTXFS})
@@ -131,6 +143,7 @@ SET(fsalkvsfs_LIB_SRCS
    xattrs.c
    mds.c
    ds.c
+   addb_cfs_plugin.c
 )
 
 add_library(libganesha OBJECT ${fsalkvsfs_LIB_SRCS})
