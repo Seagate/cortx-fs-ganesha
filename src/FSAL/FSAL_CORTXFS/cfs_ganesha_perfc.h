@@ -58,6 +58,8 @@ enum perfc_fsal_entity_attrs {
 	PEA_FSAL_START = PEAR_RANGE_2_START,
 	PEA_W_OFFSET,
 	PEA_W_SIZE,
+	PEA_W_IOVC,
+	PEA_W_IOVL,
 	PEA_W_RES_MAJ,
 	PEA_W_RES_MIN,
 	PEA_R_OFFSET,
