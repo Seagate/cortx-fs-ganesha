@@ -1116,8 +1116,6 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 {
 	struct kvsfs_fsal_obj_handle *myself;
 	struct kvsfs_file_handle kvsfs_ds_handle;
-	/* The private 'full' object handle */
-	// struct kvsfs_file_handle *kvsfs_handle;
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, arg);
 
