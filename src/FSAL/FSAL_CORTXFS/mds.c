@@ -1115,6 +1115,7 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 		    struct fsal_layoutcommit_res *res)
 {
 	struct kvsfs_fsal_obj_handle *myself;
+	struct kvsfs_file_handle kvsfs_ds_handle;
 	/* The private 'full' object handle */
 	// struct kvsfs_file_handle *kvsfs_handle;
 
@@ -1133,8 +1134,15 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 		container_of(obj_hdl,
 			     struct kvsfs_fsal_obj_handle,
 			     obj_handle);
-	// kvsfs_handle = myself->handle;
-	gtbl_layout_rmv_elem(myself->handle);
+
+	/* @todo: To supress compile warnings, copying data from
+	 *	  struct cfs_fh to struct kvsfs_file_handle for now,
+	 *	  but these two structures are very much apart in
+	 *	  implementation and needs revisit.
+	 */
+	memcpy(&kvsfs_ds_handle, myself->handle,
+		sizeof(struct kvsfs_file_handle));
+	gtbl_layout_rmv_elem(&kvsfs_ds_handle);
 
 	/** @todo: here, add code to actually commit the layout */
 	res->size_supplied = false;
