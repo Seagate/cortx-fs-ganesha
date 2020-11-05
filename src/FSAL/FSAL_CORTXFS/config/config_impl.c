@@ -142,6 +142,15 @@ int json_to_client_block(struct json_object *obj,
 		goto out;
 	}
 	str256_from_cstr(block->protocols, str, strlen(str));
+
+	str = NULL;
+	json_object_object_get_ex(obj, "disable_acl", &json_obj);
+	str = json_object_get_string(json_obj);
+	if (str == NULL) {
+		rc = -EINVAL;
+		goto out;
+	}
+	str256_from_cstr(block->disable_acl, str, strlen(str));
 out:
 	return rc;
 }
@@ -322,6 +331,10 @@ static void client_to_buffer(struct client_block *block,
 	memset(str, '\0', sizeof(str));
 
 	snprintf(str, sizeof(str), "\t\tprotocols = %s;\n", block->protocols.s_str);
+	append_data(buffer, str, strlen(str));
+	memset(str, '\0', sizeof(str));
+
+	snprintf(str, sizeof(str), "\t\tDisable_ACL = %s;\n", block->disable_acl.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 

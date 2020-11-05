@@ -67,6 +67,7 @@ struct client_block {
 	str256_t squash;
 	str256_t access_type;
 	str256_t protocols;
+	str256_t disable_acl;
 };
 
 /* export_block */

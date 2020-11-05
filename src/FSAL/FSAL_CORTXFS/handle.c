@@ -1870,7 +1870,7 @@ static fsal_status_t kvsfs_handle_digest(const struct fsal_obj_handle *obj_hdl,
 	assert(fh_desc);
 	assert(obj_hdl);
 
-	//We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here
+	/*We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here*/
 
 	myself = container_of(obj_hdl, const struct kvsfs_fsal_obj_handle,
 			 obj_handle);
@@ -1907,7 +1907,7 @@ fsal_status_t kvsfs_extract_handle(struct fsal_export *exp_hdl,
 
 	assert(fh_desc);
 
-	//We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here
+	/*We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here*/
 
 	if (fh_size < fh_desc->len) {
 		LogMajor(COMPONENT_FSAL,
