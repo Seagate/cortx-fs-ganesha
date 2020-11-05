@@ -1870,12 +1870,7 @@ static fsal_status_t kvsfs_handle_digest(const struct fsal_obj_handle *obj_hdl,
 	assert(fh_desc);
 	assert(obj_hdl);
 
-	/*if (output_type != FSAL_DIGEST_NFSV4) {
-		LogMajor(COMPONENT_FSAL,
-			 "Only NFSv4 File handles are supported."
-			 "Unsupported FH type: %d", output_type);
-		return fsalstat(ERR_FSAL_SERVERFAULT, 0);
-	}*/
+	//We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here
 
 	myself = container_of(obj_hdl, const struct kvsfs_fsal_obj_handle,
 			 obj_handle);
@@ -1912,13 +1907,7 @@ fsal_status_t kvsfs_extract_handle(struct fsal_export *exp_hdl,
 
 	assert(fh_desc);
 
-	/*if (in_type != FSAL_DIGEST_NFSV4) {
-		LogMajor(COMPONENT_FSAL,
-			 "Only NFSv4 File handles are supported."
-			 "Unsupported FH type: %d", in_type);
-		return fsalstat(ERR_FSAL_SERVERFAULT, 0);
-	}*/
-
+	//We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here
 
 	if (fh_size < fh_desc->len) {
 		LogMajor(COMPONENT_FSAL,
