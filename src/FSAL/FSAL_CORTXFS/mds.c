@@ -1010,7 +1010,8 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 	/* @todo for pNFS : To convert host file handle to wire,
 	 * one must use relevant API's that can construct
 	 * struct kvsfs_file_handle from given struct cfs_fh.
-	 * (myself->handle) should be converted to kvsfs_ds_handle.
+	 * (myself->handle) should be converted to an opaque file
+	 * in the future handle.
 	 * Until that is implemented, this path should fail.
 	 */
 	LogCrit(COMPONENT_PNFS, "Conversion of host file handle",
@@ -1093,7 +1094,8 @@ kvsfs_layoutreturn(struct fsal_obj_handle *obj_hdl,
 	/* @todo for pNFS : To convert host file handle to wire,
 	 * one must use relevant API's that can construct
 	 * struct kvsfs_file_handle from given struct cfs_fh.
-	 * (myself->handle) should be converted to kvsfs_ds_handle.
+	 * (myself->handle) should be converted to an opaque file
+	 * in the future handle.
 	 * Until that is implemented, this path should fail.
 	 */
 	LogCrit(COMPONENT_PNFS, "Conversion of host file handle",
@@ -1154,7 +1156,8 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 	/* @todo for pNFS : To convert host file handle to wire,
 	 * one must use relevant API's that can construct
 	 * struct kvsfs_file_handle from given struct cfs_fh.
-	 * (myself->handle) should be converted to kvsfs_ds_handle.
+	 * (myself->handle) should be converted to an opaque file
+	 * in the future handle.
 	 * Until that is implemented, this path should fail.
 	 */
 	LogCrit(COMPONENT_PNFS, "Conversion of host file handle",
