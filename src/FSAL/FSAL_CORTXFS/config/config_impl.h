@@ -67,7 +67,6 @@ struct client_block {
 	str256_t squash;
 	str256_t access_type;
 	str256_t protocols;
-	str256_t disable_acl;
 };
 
 /* export_block */
@@ -81,7 +80,7 @@ struct export_block {
 	str256_t sectype;
 	str256_t filesystem_id;
 	struct client_block client_block;
-
+	str256_t disable_acl;
 };
 
 /* ganesha config */
