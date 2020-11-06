@@ -1007,8 +1007,15 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 		 "devid nodeAddr %016"PRIx64,
 		 deviceid.devid);
 
-	memcpy(&kvsfs_ds_handle,
-	       myself->handle, sizeof(struct kvsfs_file_handle));
+	/* @todo for pNFS : To convert host file handle to wire,
+	 * one must use relevant API's that can construct
+	 * struct kvsfs_file_handle from given struct cfs_fh.
+	 * (myself->handle) should be converted to kvsfs_ds_handle.
+	 * Until that is implemented, this path should fail.
+	 */
+	LogCrit(COMPONENT_PNFS, "Conversion of host file handle",
+				"to wire not handled correctly");
+	assert(0);
 
 	nfs_status = gtbl_layout_add_elem(&kvsfs_ds_handle);
 	if (nfs_status != NFS4_OK) {
@@ -1066,6 +1073,7 @@ kvsfs_layoutreturn(struct fsal_obj_handle *obj_hdl,
 {
 	struct kvsfs_fsal_obj_handle *myself;
 	/* The private 'full' object handle */
+	struct kvsfs_file_handle kvsfs_ds_handle;
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, arg);
 
@@ -1082,8 +1090,18 @@ kvsfs_layoutreturn(struct fsal_obj_handle *obj_hdl,
 			      struct kvsfs_fsal_obj_handle,
 			      obj_handle);
 
+	/* @todo for pNFS : To convert host file handle to wire,
+	 * one must use relevant API's that can construct
+	 * struct kvsfs_file_handle from given struct cfs_fh.
+	 * (myself->handle) should be converted to kvsfs_ds_handle.
+	 * Until that is implemented, this path should fail.
+	 */
+	LogCrit(COMPONENT_PNFS, "Conversion of host file handle",
+				"to wire not handled correctly");
+	assert(0);
+
 	/* TODO: Unlock the layout lock from this file handle */
-	gtbl_layout_rmv_elem((const struct kvsfs_file_handle *) myself->handle);
+	gtbl_layout_rmv_elem(&kvsfs_ds_handle);
 
 	T_EXIT0(NFS4_OK);
 	return NFS4_OK;
@@ -1133,13 +1151,16 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 			     struct kvsfs_fsal_obj_handle,
 			     obj_handle);
 
-	/* @todo: To supress compile warnings, copying data from
-	 *	  struct cfs_fh to struct kvsfs_file_handle for now,
-	 *	  but these two structures are very much apart in
-	 *	  implementation and needs revisit.
+	/* @todo for pNFS : To convert host file handle to wire,
+	 * one must use relevant API's that can construct
+	 * struct kvsfs_file_handle from given struct cfs_fh.
+	 * (myself->handle) should be converted to kvsfs_ds_handle.
+	 * Until that is implemented, this path should fail.
 	 */
-	memcpy(&kvsfs_ds_handle, myself->handle,
-		sizeof(struct kvsfs_file_handle));
+	LogCrit(COMPONENT_PNFS, "Conversion of host file handle",
+				"to wire not handled correctly");
+	assert(0);
+
 	gtbl_layout_rmv_elem(&kvsfs_ds_handle);
 
 	/** @todo: here, add code to actually commit the layout */
