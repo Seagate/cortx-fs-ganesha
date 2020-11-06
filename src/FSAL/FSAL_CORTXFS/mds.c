@@ -932,7 +932,7 @@ kvsfs_layoutget(struct fsal_obj_handle *obj_hdl,
 {
 	struct kvsfs_fsal_module *kvsfs_fsal = NULL;
 	struct kvsfs_fsal_obj_handle *myself;
-	struct kvsfs_file_handle kvsfs_ds_handle;
+	struct kvsfs_file_handle kvsfs_ds_handle = {0};
 	uint32_t stripe_unit = 0;
 	nfl_util4 util = 0;
 	struct pnfs_deviceid deviceid = DEVICE_ID_INIT_ZERO(FSAL_ID_EXPERIMENTAL);
@@ -1073,7 +1073,7 @@ kvsfs_layoutreturn(struct fsal_obj_handle *obj_hdl,
 {
 	struct kvsfs_fsal_obj_handle *myself;
 	/* The private 'full' object handle */
-	struct kvsfs_file_handle kvsfs_ds_handle;
+	struct kvsfs_file_handle kvsfs_ds_handle = {0};
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, arg);
 
@@ -1133,7 +1133,7 @@ kvsfs_layoutcommit(struct fsal_obj_handle *obj_hdl,
 		    struct fsal_layoutcommit_res *res)
 {
 	struct kvsfs_fsal_obj_handle *myself;
-	struct kvsfs_file_handle kvsfs_ds_handle;
+	struct kvsfs_file_handle kvsfs_ds_handle = {0};
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, arg);
 
