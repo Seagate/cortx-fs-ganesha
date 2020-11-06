@@ -195,7 +195,7 @@ int json_to_export_block(const char *name, uint16_t id, struct json_object *obj,
 		rc = -EINVAL;
 		goto out;
 	}
-	str256_from_cstr(block->disable_acl, str, strlen(str));
+	str256_from_cstr(block->disable_acl, str, strnlen(str, 5));
 	str = NULL;
 	rc = json_to_client_block(obj, &block->client_block);
 out:
