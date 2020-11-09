@@ -28,7 +28,8 @@ struct kvsfs_fsal_module {
 struct kvsfs_file_state {
 	/** The open and share mode etc. */
 	fsal_openflags_t openflags;
-
+	/* rw lock to protect the CPRTXFS file descriptor */
+	pthread_rwlock_t fdlock;
 	/** The CORTXFS file descriptor. */
 	cfs_file_open_t cfs_fd;
 };
@@ -57,8 +58,12 @@ struct kvsfs_fsal_obj_handle {
 	/* Global state is disabled because we don't support NFv3. */
 	/* struct kvsfs_file_state global_fd; */
 
-	/* Share reservations */
-	struct fsal_share share;
+	/* Share reservations and fd should be together*/
+	/* Other FSALs club together link info as well in the form of union */
+	struct {
+		struct fsal_share share;
+		struct kvsfs_file_state fd;
+	} file;
 };
 
 /* Returns a vtable that implements the ::cfs_endpoint_ops

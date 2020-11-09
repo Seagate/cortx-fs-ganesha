@@ -481,7 +481,7 @@ static void fsal_obj_handle_from_cfs_fh(struct fsal_export *export_base,
 static bool kvsfs_fh_is_open(struct kvsfs_fsal_obj_handle *obj)
 {
 	static const struct fsal_share empty_share = {0};
-	return (memcmp(&empty_share, &obj->share, sizeof(empty_share)) != 0);
+	return (memcmp(&empty_share, &obj->file.share, sizeof(empty_share)) != 0);
 }
 
 /*****************************************************************************/
@@ -2019,12 +2019,12 @@ static fsal_status_t kvsfs_share_try_new_state(struct kvsfs_fsal_obj_handle *obj
 
 	PTHREAD_RWLOCK_wrlock(&obj->obj_handle.obj_lock);
 
-	status = check_share_conflict(&obj->share, new_openflags, false);
+	status = check_share_conflict(&obj->file.share, new_openflags, false);
 	if (FSAL_IS_ERROR(status)) {
 		goto out;
 	}
 
-	update_share_counters(&obj->share, old_openflags, new_openflags);
+	update_share_counters(&obj->file.share, old_openflags, new_openflags);
 
 out:
 	PTHREAD_RWLOCK_unlock(&obj->obj_handle.obj_lock);
@@ -2039,7 +2039,7 @@ static void kvsfs_share_set_new_state(struct kvsfs_fsal_obj_handle *obj,
 {
 	PTHREAD_RWLOCK_wrlock(&obj->obj_handle.obj_lock);
 
-	update_share_counters(&obj->share, old_openflags, new_openflags);
+	update_share_counters(&obj->file.share, old_openflags, new_openflags);
 
 	PTHREAD_RWLOCK_unlock(&obj->obj_handle.obj_lock);
 }
