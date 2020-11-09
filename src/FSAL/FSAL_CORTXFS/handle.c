@@ -2277,6 +2277,88 @@ out:
 	return result;
 }
 
+fsal_status_t CORTXFSFSAL_close(struct kvsfs_fsal_obj_handle *obj,
+				struct kvsfs_file_state *my_fd)
+{
+	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
+
+	assert(kvsfs_fd_invariant_open(my_fd));
+	status = cfs_file_close(my_fd, obj);
+	my_fd->openflags = FSAL_O_CLOSED;
+	my_fd->cfs_fd.ino = CFS_INVALID_INO_FOR_FD;
+	return status;
+}
+
+fsal_status_t CORTXFSFSAL_open(struct kvsfs_fsal_obj_handle *obj,
+			       struct kvsfs_file_state *my_fd,
+			       fsal_openflags_t openflags)
+{
+	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
+
+	status = cfs_file_open(my_fd, openflags, obj);
+	my_fd->openflags = FSAL_O_NFS_FLAGS(openflags);
+	my_fd->cfs_fd.ino = *kvsfs_fh_to_ino(obj->handle);
+	return status;
+}
+
+/* kvsfs_open_func implementation required for fsal_find_fd function */
+static fsal_status_t
+kvsfs_open_func(struct fsal_obj_handle *obj_hdl, fsal_openflags_t openflags,
+	        struct fsal_fd *fd)
+{
+	struct kvsfs_file_state *my_fd = (struct kvsfs_file_state *)fd;
+	struct kvsfs_fsal_obj_handle *obj;
+	int posix_flags = 0;
+
+	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+	fsal2posix_openflags(openflags, &posix_flags);
+	return CORTXFSFSAL_open(obj, my_fd, openflags);
+}
+
+/* kvsfs_close_func implementation required for fsal_find_fd function */
+static fsal_status_t
+kvsfs_close_func(struct fsal_obj_handle *obj_hdl, struct fsal_fd *fd)
+{
+	struct kvsfs_file_state *my_fd = (struct kvsfs_file_state *)fd;
+	struct kvsfs_fsal_obj_handle *obj;
+
+	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+	return CORTXFSFSAL_close(obj, my_fd);
+}
+/* find_fd function based on other FSALs like GPFS, GLUSTERFS. This function
+ * will provide a way to get the fd (whether associated with state or global
+ * fd) and carry out next operation like read / write etc */
+fsal_status_t find_fd(struct kvsfs_file_state *my_fd,
+		      struct fsal_obj_handle *obj_hdl, bool bypass,
+		      struct state_t *state, fsal_openflags_t openflags,
+		      bool *has_lock, bool *closefd, bool open_for_locks)
+{
+	struct kvsfs_fsal_obj_handle *obj;
+	struct kvsfs_file_state  tmp_fd = {0}, *tmp2_fd = &tmp_fd;
+	bool reusing_open_state_fd = false;
+	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0};
+
+	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+
+	/* Handle only regular files */
+	if (obj_hdl->type != REGULAR_FILE)
+		return fsalstat(posix2fsal_error(EINVAL), EINVAL);
+
+	status = fsal_find_fd((struct fsal_fd **)&tmp2_fd, obj_hdl,
+			      (struct fsal_fd *)&obj->file.fd,
+			      &obj->file.share, bypass, state,
+			      openflags, kvsfs_open_func,
+			      kvsfs_close_func, has_lock, closefd,
+			      open_for_locks, &reusing_open_state_fd);
+
+	if (FSAL_IS_ERROR(status))
+		goto out;
+	/* fill the fd fields */
+	my_fd->openflags = tmp2_fd->openflags;
+	my_fd->cfs_fd = tmp2_fd->cfs_fd;
+out:
+	return status;
+}
 /******************************************************************************/
 /* FSAL_EXPORT.alloc_state */
 struct state_t *kvsfs_alloc_state(struct fsal_export *exp_hdl,
