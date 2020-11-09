@@ -87,6 +87,8 @@ static const struct entity_attrs_items {
   const char* str;
 } g_entity_attrs_items_map[] = {
   [PEA_W_OFFSET] = { .str = "write_offset" },
+  [PEA_W_IOVC] = { .str = "write_iovc" },
+  [PEA_W_IOVL] = { .str = "write_iovl" },
   [PEA_W_SIZE] = { .str = "write_size" },
   [PEA_W_RES_MAJ] = { .str = "write_result_major_code" },
   [PEA_W_RES_MIN] = { .str = "write_result_minor_code" },
@@ -393,6 +395,26 @@ static void decode_perfc_function_tags(struct m0_addb2__context *ctx,
   strcpy(buf, g_function_tag_items_map[*v].str);
 }
 
+static const struct submodule_tag_items {
+	const char* str;
+} g_sm_tag_items_map[] = {
+	[PSMTR_A] = { .str = "CFS"  },
+	[PSMTR_B] = { .str = "FSAL_CFS"  },
+	[PSMTR_C] = { .str = "DSAL"  },
+	[PSMTR_D] = { .str = "NSAL"  },
+	[PSMTR_E] = { .str = "UTILS"  },
+	[PSMTR_F] = { .str = "RESERVED"  },
+};
+
+_Static_assert(ARRAY_SIZE(g_sm_tag_items_map) <= PSMTR_END, "Invalid sm tag");
+
+static void decode_perfc_sm_tags(struct m0_addb2__context *ctx,
+			         const uint64_t *v, char *buf)
+{
+	M0_PRE(*v < PSMTR_END);
+	strcpy(buf, g_sm_tag_items_map[*v].str);
+}
+
 static const struct entry_type_items {
   const char* str;
 } g_entry_type_items_map[] = {
@@ -415,6 +437,7 @@ static struct m0_addb2__id_intrp gs_curr_ids[] = {
         "fsuser_state",
         {
             &decode_perfc_function_tags,
+            &decode_perfc_sm_tags,
             &decode_perfc_entry_type,
             &hex, // operation id
             &decode_perfc_entity_states
@@ -425,6 +448,7 @@ static struct m0_addb2__id_intrp gs_curr_ids[] = {
         "fsuser_attribute",
         {
             &decode_perfc_function_tags,
+            &decode_perfc_sm_tags,
             &decode_perfc_entry_type,
             &hex, // operation id
             &decode_perfc_entity_attrs,
@@ -436,6 +460,7 @@ static struct m0_addb2__id_intrp gs_curr_ids[] = {
         "fsuser_map",
         {
             &decode_perfc_function_tags,
+            &decode_perfc_sm_tags,
             &decode_perfc_entry_type,
             &hex, // map name
             &hex, // operation id
