@@ -82,6 +82,7 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 	fsal_errors_t fsal_error = ERR_FSAL_INVAL;
 	struct cfs_fs *cfs_fs = NULL;
 	uint8_t pnfs_role; 
+	char *fsname_ptr;
 
 	uint16_t fsid =	op_ctx->ctx_export->export_id;
 	LogEvent(COMPONENT_FSAL, "export id %d", (int)fsid);
@@ -104,8 +105,14 @@ fsal_status_t kvsfs_create_export(struct fsal_module *fsal_hdl,
 	
 	/* Get the pNFS Role */
 	pnfs_role = get_pnfs_role(&KVSFS);
-
-	retval = cfs_fs_open(op_ctx->ctx_export->fullpath, &cfs_fs);
+	
+	/* As per current design, entire file system is exported, so its
+	* safe to assume that the export path excluding initial / is the
+	* file system name. Need to revisit if multiple exports per
+	* file system is supported in future */
+	fsname_ptr = op_ctx->ctx_export->fullpath;
+	fsname_ptr++;
+	retval = cfs_fs_open(fsname_ptr, &cfs_fs);
 	if (retval != 0) {
 		LogMajor(COMPONENT_FSAL, "FS open failed :%s",
 				op_ctx->ctx_export->fullpath);

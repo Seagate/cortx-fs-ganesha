@@ -18,8 +18,8 @@ GANESHA_CONF_BAK=${GANESHA_CONF}.$$
 CORTXFS_FS_CLI="/usr/bin/cortxfscli"
 NFS_INITIALIZED=/var/lib/nfs/nfs_initialized
 NFS_SETUP_LOG=/var/log/nfs_setup.log
-DEFAULT_EXPORT_OPTION="proto=nfs,secType=sys,Filesystem_id=192.1,client=1,"
-DEFAULT_EXPORT_OPTION+="clients=*,Squash=no_root_squash,access_type=RW,protocols=4,"
+DEFAULT_EXPORT_OPTION="proto=nfs,secType=sys,Filesystem_id=192.1,client=1,disable_acl=true,"
+DEFAULT_EXPORT_OPTION+="clients=*,Squash=no_root_squash,access_type=RW,protocols=3,"
 
 # Enable/Disable pNFS
 pNFS_ENABLED=false
@@ -211,6 +211,9 @@ EXPORT {
 		# Restrict the protocols that may use this export.  This cannot allow
 		# access that is denied in NFS_CORE_PARAM.
 		protocols = 4;
+		
+		# To enable/disable ACL
+		Disable_ACL = true;
 	}
 }
 

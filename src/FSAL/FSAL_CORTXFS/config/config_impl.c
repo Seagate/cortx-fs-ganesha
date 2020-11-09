@@ -142,6 +142,7 @@ int json_to_client_block(struct json_object *obj,
 		goto out;
 	}
 	str256_from_cstr(block->protocols, str, strlen(str));
+
 out:
 	return rc;
 }
@@ -186,6 +187,15 @@ int json_to_export_block(const char *name, uint16_t id, struct json_object *obj,
 		goto out;
 	}
 	str256_from_cstr(block->filesystem_id, str, strlen(str));
+	str = NULL;
+
+	json_object_object_get_ex(obj, "disable_acl", &json_obj);
+	str = json_object_get_string(json_obj);
+	if (str == NULL) {
+		rc = -EINVAL;
+		goto out;
+	}
+	str256_from_cstr(block->disable_acl, str, strnlen(str, 5));
 	str = NULL;
 	rc = json_to_client_block(obj, &block->client_block);
 out:
@@ -345,7 +355,11 @@ static void export_to_buffer(struct export_block *block,
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
-	snprintf(str, sizeof(str), "\tPath = %s;\n", block->path.s_str);
+	snprintf(str, sizeof(str), "\tDisable_ACL = %s;\n", block->disable_acl.s_str);
+	append_data(buffer, str, strlen(str));
+	memset(str, '\0', sizeof(str));
+
+	snprintf(str, sizeof(str), "\tPath = /%s;\n", block->path.s_str);
 	append_data(buffer, str, strlen(str));
 	memset(str, '\0', sizeof(str));
 
