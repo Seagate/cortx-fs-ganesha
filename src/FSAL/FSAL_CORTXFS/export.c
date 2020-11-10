@@ -231,6 +231,12 @@ static fsal_status_t get_dynamic_info(struct fsal_export *exp_hdl,
 				      struct fsal_obj_handle *obj_hdl,
 				      fsal_dynamicfsinfo_t *infop)
 {
+	/* Initiliase the data structure with 0s.
+	 * We do not have FS stats implemented now.
+	 * In future, once FS stats is implemented,
+	 * we should populate ds with correct values.
+	 */
+	memset(infop, 0, sizeof(fsal_dynamicfsinfo_t));
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
 
