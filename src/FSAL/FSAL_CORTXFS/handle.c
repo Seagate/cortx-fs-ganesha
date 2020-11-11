@@ -3570,11 +3570,8 @@ static fsal_status_t kvsfs_perf_op_commit2(struct fsal_obj_handle *obj_hdl,
 void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 {
 	uint8_t enable_mon = 0;
-	int rc; 
 
-	rc = pthread_key_create(&perfc_tls_key, NULL);
-	dassert(rc == 0);
-
+	perfc_tsdb_setup();
 	fsal_default_obj_ops_init(ops);
 
 #ifdef ENABLE_TSDB_ADDB
