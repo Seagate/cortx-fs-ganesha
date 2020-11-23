@@ -42,7 +42,7 @@ const char *Squash_keywords[] = {
 		"rootidsquash", "all", "all_squash", "allsquash", "all_anomnymous",
 		"allanonymous", "no_root_squash", "none", "noidsquash"};
 const char *Access_Type_keywords[] = {"None", "RW", "RO", "MDONLY", "MDONLY_RO"};
-const char *Protocols_keywords[] = {"4", "NFS4", "V4", "NFSv4", "3", "NFS3", "V3", "NFSv3", "3,4"};
+const char *Protocols_keywords[] = {"4", "4.1", "NFS4", "V4", "NFSv4", "3", "NFS3", "V3", "NFSv3", "3,4"};
 
 static int regex_match(const char *str, const char *pattern)
 {
