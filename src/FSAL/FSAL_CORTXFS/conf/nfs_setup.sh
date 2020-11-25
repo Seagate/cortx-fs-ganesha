@@ -8,6 +8,7 @@ INDEX_DIR=/tmp
 KVS_GLOBAL_FID='<0x780000000000000b:1>'
 KVS_NS_META_FID='<0x780000000000000b:2>'
 DEFAULT_FS=''
+DEFAULT_FSBLOCK_SIZE=4096
 FS_PATH='nonexistent'
 LOC_EXPORT_ID='@tcp:12345:44:301'
 HA_EXPORT_ID='@tcp:12345:45:1'
@@ -20,6 +21,7 @@ NFS_INITIALIZED=/var/lib/nfs/nfs_initialized
 NFS_SETUP_LOG=/var/log/nfs_setup.log
 DEFAULT_EXPORT_OPTION="proto=nfs,secType=sys,client=1,disable_acl=true,"
 DEFAULT_EXPORT_OPTION+="clients=*,Squash=no_root_squash,access_type=RW,protocols=3,"
+block_flag_hit=0
 
 # Enable/Disable pNFS
 pNFS_ENABLED=false
@@ -44,8 +46,8 @@ function log {
 }
 
 function create_fs {
-	echo -e "\nCreating default file system $DEFAULT_FS ..."
-	run $CORTXFS_FS_CLI fs create $DEFAULT_FS
+	echo -e "\nCreating default file system $DEFAULT_FS with block size $DEFAULT_FSBLOCK_SIZE bytes ..."
+	run "$CORTXFS_FS_CLI fs create $DEFAULT_FS proto=nfs,fs_bsize=$DEFAULT_FSBLOCK_SIZE"
 	[ $? -ne 0 ] && die "Failed to create $DEFAULT_FS"
 	
 	# Add pNFS options.
@@ -397,7 +399,7 @@ function cortx_nfs_cleanup {
 
 function usage {
 	cat <<EOF
-usage: $0 {init|config|setup|cleanup} [-h] [-f] [-p] [-q] [-d <FS name>] [-r] [-D <Data-Server IP>]
+usage: $0 {init|config|setup|cleanup} [-h] [-f] [-p] [-q] [-d "<FS name> [-b <block size in bytes (optional, default is 4K)]"] [-r] [-D <Data-Server IP>]
 Command:
   init      Create motr_lib indexes
   config    Prepare conf files and start NFS-Ganesha
@@ -409,6 +411,19 @@ Options:
   -p Prompt
   -q To perform Setup on Provisioner VM
   -d To create FS
+     Note: While using -d, the FS name is mandatory. The FS Block size is an optional
+     param, default value is 4K (4096 bytes). To change the default value, use
+     -b <new block size in bytes> right after provided FS name and keep the name and
+     rest of the portion including the -b <block_size> within a "".
+     e.g.
+     -d fs1  // This will create a FS named fs1 with default block size 4096 bytes
+     -d "fs1 -b 8192" // This will create a FS named fs1 with block size 8192 bytes
+     -d fs1 -b 8192 // This is wrong and an error will be thrown 
+     Note:
+     Min. block size is 4096 bytes, max block size is 1048576 bytes
+     Allowed block sizes start from 4096 bytes, and then allowed valid values
+     increment by one bit left shift, till the final max value 1048576.
+     e.g. 4096 (min), 8192, 16384, ..., 1048576 (max)
   -r pNFS Role {MDS|DS|BOTH}.If pNFS should be disabled do not specify -r option
   -D pNFS Data-Server IP Addr for MDS and BOTH options {IPADDR1,IPADDR2...IPADDRN} 
 
@@ -440,7 +455,28 @@ while [ ! -z $1 ]; do
 		-D ) pNFS_DATA_SERVER=$2; shift 1;;
 		-p ) prompt=1;;
 		-q ) PROVI_SETUP=1;;
-		-d ) DEFAULT_FS=$2; shift 1;;
+		-d ) delim_count=$(tr -dc " " <<< "$2" | wc -c)
+		     if [ "$delim_count" == 0 ]; then
+		     		DEFAULT_FS=$2;
+			elif [ "$delim_count" == 2 ]; then
+				for i in $(echo "$2" | tr "\"" " ")
+				do
+					if [ ! "$DEFAULT_FS" ]; then
+						DEFAULT_FS=$i;
+					elif [ "$i" == "-b" ]; then
+						block_flag_hit=1
+						continue;
+					elif [ $block_flag_hit == 1 ]; then
+						DEFAULT_FSBLOCK_SIZE=$i;
+					else
+						usage;
+					fi
+				done
+			else
+				usage;
+			fi
+			echo "Will create File system $DEFAULT_FS with block size $DEFAULT_FSBLOCK_SIZE"
+			shift 1;;
 		 * ) usage ;;
 	esac
 	shift 1
