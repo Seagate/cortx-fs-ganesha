@@ -1470,14 +1470,16 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
                                             struct attrlist *attrs_out)
 {
 	struct kvsfs_fsal_obj_handle *myself;
-	struct stat stat;
 	int retval = 0;
+	cfs_ino_t ino = 0LL;
+	struct stat *stat = NULL;
+	struct cfs_fh * fh = NULL;
 	cfs_cred_t cred;
 	fsal_status_t result;
 
 	cortxfs_cred_from_op_ctx(&cred);
 	T_ENTER(">>> (%p)", obj_hdl);
-    perfc_trace_state(PES_GEN_INIT);
+	    perfc_trace_state(PES_GEN_INIT);
 
 	if (attrs_out == NULL) {
 		retval = 0;
@@ -1486,16 +1488,18 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 	myself =
 		container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+	retval = cfs_fh_from_ino(myself->cfs_fs, &ino, &fh);
+	stat = cfs_fh_stat(fh);
 
-	retval = cfs_getattr(myself->cfs_fs, &cred,
-			     kvsfs_fh_to_ino(myself->handle), &stat);
+	//retval = cfs_getattr(myself->cfs_fs, &cred,
+	//		     kvsfs_fh_to_ino(myself->handle), stat);
 
 	result = fsalstat(posix2fsal_error(-retval), retval);
 	if (FSAL_IS_ERROR(result)) {
 		goto out;
 	}
 
-	posix2fsal_attributes_all(&stat, attrs_out);
+	posix2fsal_attributes_all(stat, attrs_out);
 	if (kvsfs_is_acl_enabled()) {
 		fsal_acl_t *acl = NULL;
 		result = kvsfs_getacl(myself, &cred, &acl);
@@ -1623,6 +1627,7 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 	int rc;
 	struct kvsfs_fsal_obj_handle *obj;
 	struct stat stats = { 0 };
+	struct cfs_fh *fh = NULL;
 	int flags = 0;
 	cfs_cred_t cred;
 
@@ -1691,12 +1696,12 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 		/* Truncate is a special IO-related operation */
 		result = kvsfs_ftruncate(obj_hdl, state, bypass, &stats, flags);
 	} else {
+		rc = cfs_fh_from_ino(obj->cfs_fs,
+					kvsfs_fh_to_ino(obj->handle), &fh);
 		/* If the size does not need to be change, then
 		 * we can simply update the stats associated with the inode.
 		 */
-		rc = cfs_setattr(obj->cfs_fs, &cred,
-				 kvsfs_fh_to_ino(obj->handle),
-				 &stats, flags);
+		rc = cfs_setattr(fh, &cred, &stats, flags);
 		result = fsalstat(posix2fsal_error(-rc), -rc);
 	}
 
@@ -2450,7 +2455,9 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	cfs_cred_t cred;
 	struct kvsfs_file_state *fd;
-	struct stat stat;
+	cfs_ino_t ino = 0LL;
+	struct stat *stat = NULL;
+	struct cfs_fh * fh = NULL;
 
 	perfc_trace_inii(PFT_OPEN2_BY_HANDLE, PEM_FSAL_TO_NFS);
 	cortxfs_cred_from_op_ctx(&cred);
@@ -2463,14 +2470,16 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	}
 
 	if (attrs_out != NULL) {
-		rc = cfs_getattr(obj->cfs_fs, &cred,
-				 kvsfs_fh_to_ino(obj->handle), &stat);
+		rc = cfs_fh_from_ino(obj->cfs_fs, &ino, &fh);
+		stat = cfs_fh_stat(fh);
+		//rc = cfs_getattr(obj->cfs_fs, &cred,
+		//		 kvsfs_fh_to_ino(obj->handle), stat);
 		if (rc < 0) {
 			status = fsalstat(posix2fsal_error(-rc), -rc);
 			goto out;
 		}
 
-		posix2fsal_attributes_all(&stat, attrs_out);
+		posix2fsal_attributes_all(stat, attrs_out);
 	}
 
 	/* kvsfs_file_state_open does not call test_access and
