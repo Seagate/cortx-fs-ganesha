@@ -68,6 +68,7 @@
 #include <debug.h>	/* dassert */
 #include "operation.h"
 #include <cfs_ganesha_perfc.h>
+#include <fcntl.h>
 
 #include <../FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_int.h>
 #include <../FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_hash.h>
@@ -2282,7 +2283,7 @@ fsal_status_t CORTXFSFSAL_close(struct kvsfs_fsal_obj_handle *obj,
 {
 	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
 
-	assert(kvsfs_fd_invariant_open(my_fd));
+	assert(kvsfs_file_state_invariant_open(my_fd));
 	status = cfs_file_close(my_fd, obj);
 	my_fd->openflags = FSAL_O_CLOSED;
 	my_fd->cfs_fd.ino = CFS_INVALID_INO_FOR_FD;
@@ -2308,10 +2309,8 @@ kvsfs_open_func(struct fsal_obj_handle *obj_hdl, fsal_openflags_t openflags,
 {
 	struct kvsfs_file_state *my_fd = (struct kvsfs_file_state *)fd;
 	struct kvsfs_fsal_obj_handle *obj;
-	int posix_flags = 0;
 
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
-	fsal2posix_openflags(openflags, &posix_flags);
 	return CORTXFSFSAL_open(obj, my_fd, openflags);
 }
 
@@ -2524,7 +2523,10 @@ static fsal_status_t kvsfs_lease_op2(struct fsal_obj_handle *obj_hdl,
 static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 					   struct state_t *state,
 					   fsal_openflags_t openflags,
+					   int posix_flags,
+					   fsal_verifier_t verifier,
 					   struct attrlist *attrs_out,
+					   enum fsal_create_mode createmode,
 					   bool *caller_perm_check)
 {
 	struct kvsfs_fsal_obj_handle *obj;
@@ -2533,47 +2535,94 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	cfs_cred_t cred;
 	struct kvsfs_file_state *fd;
 	struct stat stat;
+	const bool truncated = (posix_flags & O_TRUNC) != 0;
 
 	perfc_trace_inii(PFT_OPEN2_BY_HANDLE, PEM_FSAL_TO_NFS);
 	cortxfs_cred_from_op_ctx(&cred);
-	fd = &container_of(state, struct kvsfs_state_fd, state)->kvsfs_fd;
+
+	PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
-	status = kvsfs_file_state_open(fd, openflags, obj, false);
+	if (state != NULL) {
+		fd = &container_of(state, struct kvsfs_state_fd,
+				   state)->kvsfs_fd;
+		/* Check share reservation conflicts. */
+		status = check_share_conflict(&obj->file.share,
+					      openflags, false);
+		if (FSAL_IS_ERROR(status))
+			goto out;
+		/* Take the share reservation by updating the counters */
+		update_share_counters(&obj->file.share, FSAL_O_CLOSED,
+				      openflags);
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+	} else {
+		/* We need to use the global fd to continue. */
+		fd = &obj->file.fd;
+	}
+
+	status = CORTXFSFSAL_open(obj, fd, openflags);
+
 	if (FSAL_IS_ERROR(status)) {
+		if (state == NULL)
+			goto out;
+		else
+			goto undo_share;
+	}
+	/* As CORTXFS really do not keep open any file, no need to close it
+	 * Refer to fsal_internal_close from GPFS FSAL
+	 */
+
+	if (attrs_out && (createmode >= FSAL_EXCLUSIVE || truncated)) {
+		/* Refresh the attributes */
+		rc = cfs_getattr(obj->cfs_fs, &cred,
+				 kvsfs_fh_to_ino(obj->handle), &stat);
+		if (rc < 0)
+			status = fsalstat(posix2fsal_error(-rc), -rc);
+		else {
+			if (createmode >= FSAL_EXCLUSIVE &&
+			    !check_verifier_attrlist(attrs_out, verifier))
+				/* Verifier didn't match, return EEXIST */
+				status = fsalstat(posix2fsal_error(EEXIST),
+						  EEXIST);
+		}
+	} else if (attrs_out && attrs_out->request_mask & ATTR_RDATTR_ERR) {
+		attrs_out->valid_mask = ATTR_RDATTR_ERR;
+	}
+
+	if (state == NULL) {
+		if(caller_perm_check)
+			*caller_perm_check = !FSAL_IS_ERROR(status);
 		goto out;
 	}
 
-	if (attrs_out != NULL) {
-		rc = cfs_getattr(obj->cfs_fs, &cred,
-				 kvsfs_fh_to_ino(obj->handle), &stat);
-		if (rc < 0) {
-			status = fsalstat(posix2fsal_error(-rc), -rc);
-			goto out;
-		}
-
-		posix2fsal_attributes_all(&stat, attrs_out);
+	if (!FSAL_IS_ERROR(status)) {
+		if(caller_perm_check)
+			*caller_perm_check = true;
+		goto out_keep_locked;
 	}
 
-	/* kvsfs_file_state_open does not call test_access and
-	 * cfs_getattrs also does not check it. Therefore, let the caller
-	 * check access.
-	 */
-	if (caller_perm_check) {
-		*caller_perm_check = true;
-	}
+	/* internal close simulation */
+	fd->cfs_fd.ino = CFS_INVALID_INO_FOR_FD;
+	fd->openflags = FSAL_O_CLOSED;
 
+undo_share:
+	/* Update share counters for failure scenario */
+	PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
+	update_share_counters(&obj->file.share, openflags, FSAL_O_CLOSED);
 out:
+	PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+out_keep_locked:
 	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return status;
 }
 
+
 static fsal_status_t kvsfs_open2_by_name(struct fsal_obj_handle *parent_obj_hdl,
-					 const char *name,
-					 struct fsal_obj_handle **new_obj_hdl,
 					 struct state_t *state,
+					 const char *name,
 					 fsal_openflags_t openflags,
-					 struct attrlist *attrs_in,
+					 int posix_flags,
+					 fsal_verifier_t verifier,
 					 struct attrlist *attrs_out,
 					 bool *caller_perm_check)
 {
@@ -2589,19 +2638,26 @@ static fsal_status_t kvsfs_open2_by_name(struct fsal_obj_handle *parent_obj_hdl,
 		goto out;
 	}
 
-	assert(obj != NULL);
+	if (obj->type != REGULAR_FILE) {
+		if (obj->type == DIRECTORY) {
+			/* Trying to open2 a directory */
+			result = fsalstat(ERR_FSAL_ISDIR, 0);
+		} else {
+			/* Trying to open2 any other non-regular file */
+			result = fsalstat(ERR_FSAL_SYMLINK, 0);
+		}
+		goto free_obj;
+	}
 
-	result = kvsfs_open2_by_handle(obj, state, openflags,
-				       attrs_out, caller_perm_check);
+	result = kvsfs_open2_by_handle(obj, state, openflags, posix_flags,
+				       verifier, attrs_out, FSAL_NO_CREATE,
+				       caller_perm_check);
 	if (FSAL_IS_ERROR(result)) {
 		goto free_obj;
 	}
 
-	/* Give it to the caller */
-	*new_obj_hdl = obj;
-	obj = NULL;
-
 free_obj:
+	/* Release the object we found by lookup */
 	if (obj) {
 		obj->obj_ops->release(obj);
 	}
@@ -2610,67 +2666,12 @@ out:
 	return result;
 }
 
-/** Implementation of OPEN4+UNCHECKED4 case when the file exists. */
-static fsal_status_t kvsfs_open_unchecked(struct fsal_obj_handle *obj_hdl,
-					  struct state_t *state,
-					  fsal_openflags_t openflags,
-					  struct attrlist *attrs_in,
-					  struct attrlist *attrs_out,
-					  bool *caller_perm_check)
-{
-	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
-	bool close_on_exit = false;
-	struct stat stat = {0};
-	int flags = 0;
 
-	T_ENTER(">>> (obj=%p, state=%p, attrs_in=%p, attrs_out=%p)",
-		obj_hdl, state, attrs_in, attrs_out);
-
-	assert(obj_hdl);
-	assert(attrs_in);
-	assert(state);
-	assert(obj_hdl->type == REGULAR_FILE);
-
-	result = kvsfs_open2_by_handle(obj_hdl, state, openflags, attrs_out,
-				       caller_perm_check);
-	if (FSAL_IS_ERROR(result)) {
-		goto out;
-	}
-
-	close_on_exit = true;
-
-	/* TODO: When all OPEN4 cases are implemented,
-	 * this O_TRUNC processing might be integrated into open_by_handle.
-	 */
-	if ((openflags & FSAL_O_TRUNC) != 0) {
-		flags |= STAT_SIZE_SET;
-		stat.st_size = 0;
-		result = kvsfs_ftruncate(obj_hdl, state, false, &stat, flags);
-		if (FSAL_IS_ERROR(result)) {
-			goto out;
-		}
-		/* We don't need to change attrs_out->filesize here
-		 * because its is unset by Ganesha already.
-		 */
-	}
-
-	close_on_exit = false;
-out:
-	if (close_on_exit) {
-		(void) obj_hdl->obj_ops->close2(obj_hdl, state);
-	}
-	T_EXIT0(result.major);
-	return result;
-}
-
-
-
-/** Implementation of OPEN4+UNCHECKED4 case when the file does not exist. */
+/** Implementation of kvsfs_create2 when the file does not exist. */
 static fsal_status_t
-kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
-		       struct state_t *state, struct fsal_obj_handle **pnew_obj,
-		       fsal_openflags_t openflags, struct attrlist *attrs_in,
-		       struct attrlist *attrs_out, bool *caller_perm_check)
+kvsfs_create2(struct fsal_obj_handle *parent_obj_hdl, const char *name,
+	      struct fsal_obj_handle **pnew_obj, fsal_openflags_t openflags,
+	      struct attrlist *attrs_in, struct attrlist *attrs_out)
 {
 	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	int rc;
@@ -2683,14 +2684,13 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 	struct stat *stat = NULL;
 	int flags;
 
-	T_ENTER(">>> (parent=%p, state=%p, name=%s, attrs_in=%p, attrs_out=%p)",
-		parent_obj_hdl, state, name, attrs_in, attrs_out);
+	T_ENTER(">>> (parent=%p, name=%s, attrs_in=%p, attrs_out=%p)",
+		parent_obj_hdl, name, attrs_in, attrs_out);
 	perfc_trace_inii(PFT_CREATE_UNCHECKED, PEM_FSAL_TO_NFS);
 
 	/* Ganesha sets ATTR_MODE even if the client didn't set it */
-	assert(FSAL_TEST_MASK(attrs_in->valid_mask, ATTR_MODE));
 	assert(name != NULL);
-	assert(state && parent_obj_hdl);
+	assert(parent_obj_hdl);
 
 	cortxfs_cred_from_op_ctx(&cred);
 	parent_obj = container_of(parent_obj_hdl,
@@ -2723,22 +2723,12 @@ kvsfs_create_unchecked(struct fsal_obj_handle *parent_obj_hdl, const char *name,
 
 	stat = cfs_fh_stat(hdl->handle);
 
-	result = kvsfs_open2_by_handle(obj_hdl, state, openflags, NULL, NULL);
-	if (FSAL_IS_ERROR(result)) {
-		goto out;
-	}
-
 	if (attrs_out != NULL) {
 		posix2fsal_attributes_all(stat, attrs_out);
 	}
 
 	*pnew_obj = obj_hdl;
 	obj_hdl = NULL;
-
-	/* We have already checked permissions in cfs_create */
-	if (caller_perm_check) {
-		*caller_perm_check = false;
-	}
 
 	T_TRACE("Created: %p", *pnew_obj);
 
@@ -2751,146 +2741,50 @@ out:
 	return result;
 }
 
-/** Implementation of OPEN4+EXCLUSIVE4 case when the file does not exist.
- * At first NFS Ganesha checks if the file exists. If it doesn't then ganesha
- * calls the fsal open2 callback. If it exists then ganesha checks the verifier
- * in order to determine if it is a retransmission.
+
+/* Refer to VFS/GPFS/GLUSTERFS FSAL implementations */
+/**
+ * @brief Open a file descriptor for read or write and possibly create
+ *
+ * This function opens a file for read or write, possibly creating it.
+ * If the caller is passing a state, it must hold the state_lock
+ * exclusive.
+ *
+ * state can be NULL which indicates a stateless open (such as via the
+ * NFS v3 CREATE operation), in which case the FSAL must assure protection
+ * of any resources. If the file is being created, such protection is
+ * simple since no one else will have access to the object yet, however,
+ * in the case of an exclusive create, the common resources may still need
+ * protection.
+ *
+ * If Name is NULL, obj_hdl is the file itself, otherwise obj_hdl is the
+ * parent directory.
+ *
+ * On an exclusive create, the upper layer may know the object handle
+ * already, so it MAY call with name == NULL. In this case, the caller
+ * expects just to check the verifier.
+ *
+ * On a call with an existing object handle for an UNCHECKED create,
+ * we can set the size to 0.
+ *
+ * If an open by name succeeds and did not result in Ganesha creating a file,
+ * the caller will need to do a subsequent permission check to confirm the
+ * open. This is because the permission attributes were not available
+ * beforehand.
+ *
+ * @param[in] obj_hdl               File to open or parent directory
+ * @param[in,out] state             state_t to use for this operation
+ * @param[in] openflags             Mode for open
+ * @param[in] createmode            Mode for create
+ * @param[in] name                  Name for file if being created or opened
+ * @param[in] attrs_in              Attributes to set on created file
+ * @param[in] verifier              Verifier to use for exclusive create
+ * @param[in,out] new_obj           Newly created object
+ * @param[in,out] attrs_out         Optional attributes for newly created object
+ * @param[in,out] caller_perm_check The caller must do a permission check
+ *
+ * @return FSAL status.
  */
-static fsal_status_t
-kvsfs_create_exclusive40(struct fsal_obj_handle *parent_obj_hdl, const char *name,
-			 struct state_t *state, struct fsal_obj_handle **pnew_obj,
-			 fsal_openflags_t openflags, struct attrlist *attrs_in,
-			 struct attrlist *attrs_out, bool *caller_perm_check,
-			 fsal_verifier_t verifier)
-{
-	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
-	int rc;
-	struct kvsfs_fsal_obj_handle *parent_obj, *hdl;
-	struct fsal_obj_handle *obj_hdl = NULL;
-	cfs_cred_t cred;
-	cfs_ino_t object;
-	struct stat stat_in;
-	struct stat stat_out;
-	struct stat *stat = NULL;
-	int flags;
-
-	/* attrs_in is not empty but only fattr.mode is set. */
-	assert(attrs_in);
-	/* but only mode is set by NFS Ganesha */
-	assert(attrs_in->valid_mask == ATTR_MODE);
-
-	assert(name);
-
-	cortxfs_cred_from_op_ctx(&cred);
-	/* Use ATIME and MTIME attrs as verifiers. */
-	set_common_verifier(attrs_in, verifier);
-
-	assert(FSAL_TEST_MASK(attrs_in->valid_mask, ATTR_ATIME));
-	assert(FSAL_TEST_MASK(attrs_in->valid_mask, ATTR_MTIME));
-	assert(FSAL_TEST_MASK(attrs_in->valid_mask, ATTR_MODE));
-
-	/* create operations do not support the truncate flag */
-	assert((openflags & FSAL_O_TRUNC) == 0);
-
-	result = kvsfs_setattr_attrlist2stat(attrs_in, &stat_in, &flags);
-	if (FSAL_IS_ERROR(result)) {
-		/* this function cannot fail if we are setting only
-		 * atime, mtime and mode.
-		 */
-		assert(0);
-		goto out;
-	}
-
-	parent_obj = container_of(parent_obj_hdl,
-				  struct kvsfs_fsal_obj_handle, obj_handle);
-
-	/* TODO: As we will have FH, it hold the reference of stat attributes,
-	 * so we will get rid of stat_out/stat_in param in this API
-	 */
-	rc = cfs_creat_ex(parent_obj->cfs_fs, &cred,
-			  kvsfs_fh_to_ino(parent_obj->handle),
-			  (char *) name,
-			  stat_in.st_mode,
-			  &stat_in, flags,
-			  &object,
-			  &stat_out);
-	if (rc < 0) {
-		result = fsalstat(posix2fsal_error(-rc), -rc);
-		goto out;
-	}
-
-	construct_handle(op_ctx->fsal_export, &object, &obj_hdl);
-
-	hdl = container_of(obj_hdl, struct kvsfs_fsal_obj_handle,
-			   obj_handle);
-
-	stat = cfs_fh_stat(hdl->handle);
-
-
-	result = kvsfs_open2_by_handle(obj_hdl, state, openflags, NULL, NULL);
-	if (FSAL_IS_ERROR(result)) {
-		goto out;
-	}
-
-	*pnew_obj = obj_hdl;
-	obj_hdl = NULL;
-
-	if (attrs_out != NULL) {
-		posix2fsal_attributes_all(stat, attrs_out);
-	}
-
-	/* We have already checked permissions in cfs_creat_ex */
-	if (caller_perm_check) {
-		*caller_perm_check = false;
-	}
-
-	T_TRACE("Created: %p", *pnew_obj);
-
-out:
-	if (obj_hdl != NULL) {
-		obj_hdl->obj_ops->release(obj_hdl);
-	}
-	T_EXIT0(result.major);
-	return result;
-}
-
-/* Open a file which has been created with O_EXCL but was not opened. */
-static fsal_status_t
-kvsfs_open_exclusive40(struct fsal_obj_handle *obj_hdl,
-		       struct state_t *state,
-		       fsal_openflags_t openflags,
-		       struct attrlist *attrs_in,
-		       struct attrlist *attrs_out,
-		       bool *caller_perm_check)
-{
-	fsal_status_t result;
-
-	T_ENTER(">>> (obj=%p, st=%p, open=%d, pcheck=%p)",
-		obj_hdl, state, openflags, caller_perm_check);
-
-	assert(obj_hdl);
-
-	/* attrs_in is set */
-	assert(attrs_in);
-	/* but only fattr.mode is set by NFS Ganesha. And in an open call
-	 * we should ignore it. */
-	assert(attrs_in->valid_mask == ATTR_MODE);
-
-	/* Truncate is not allowed */
-	assert((openflags & FSAL_O_TRUNC) == 0);
-
-	/* let open_by_handle fill in the attrs and the perm check  flag */
-	result = kvsfs_open2_by_handle(obj_hdl, state, openflags, attrs_out,
-				       caller_perm_check);
-	if (FSAL_IS_ERROR(result)) {
-		goto out;
-	}
-
-out:
-	T_EXIT0(result.major);
-	return result;
-}
-
 static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 				 struct state_t *state,
 				 fsal_openflags_t openflags,
@@ -2903,6 +2797,9 @@ static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 				 bool *caller_perm_check)
 {
 	fsal_status_t result;
+	bool created = false;
+	/* posix_flags to decide whether we are creating a file or not */
+	int posix_flags = 0;
 
 	T_ENTER(">>> (obj=%p, st=%p, open=%d, create=%d,"
 		" name=%s, attr_in=%p, verf=%d, new=%p,"
@@ -2920,120 +2817,109 @@ static fsal_status_t kvsfs_open2(struct fsal_obj_handle *obj_hdl,
 
 	assert(obj_hdl);
 
-	if (state == NULL) {
-		LogCrit(COMPONENT_FSAL,
-			"KVSFS does not support NFSv3 clients.");
-		result = fsalstat(ERR_FSAL_NOTSUPP, 0);
-		goto out;
-	}
-
 	if (attrs_in != NULL) {
 		LogAttrlist(COMPONENT_FSAL, NIV_FULL_DEBUG,
 			    "attris_in ", attrs_in, false);
 	}
 
+	if (createmode >= FSAL_EXCLUSIVE)
+		/* Now fixup attrs for verifier if exclusive create */
+		set_common_verifier(attrs_in, verifier);
+
+	if (name == NULL) {
+		result = kvsfs_open2_by_handle(obj_hdl, state, openflags,
+					     posix_flags, verifier, attrs_out,
+					     createmode, caller_perm_check);
+		goto out;
+	}
+	/* TODO: see if we can have "open by name" functionality. Below function
+	 * does a lookup and then handles as "open by handle"
+	 */
 	if (createmode == FSAL_NO_CREATE) {
-		if (name == NULL) {
-			result = kvsfs_open2_by_handle(obj_hdl, state,
-						       openflags,
-						       attrs_out,
-						       caller_perm_check);
+		result =  kvsfs_open2_by_name(obj_hdl, state, name, openflags,
+					   posix_flags, verifier, attrs_out,
+					   caller_perm_check);
+		goto out;
+	}
+
+	posix_flags |= O_CREAT;
+	if (createmode >= FSAL_GUARDED)
+		posix_flags |= O_EXCL;
+
+	/* Don't set the mode if we later set the attributes */
+	FSAL_UNSET_MASK(attrs_in->valid_mask, ATTR_MODE);
+
+	if (createmode == FSAL_UNCHECKED && (attrs_in->valid_mask != 0)) {
+		/* If we have FSAL_UNCHECKED and want to set more attributes
+		 * than the mode, we attempt an O_EXCL create first, if that
+		 * succeeds, then we will be allowed to set the additional
+		 * attributes, otherwise, we don't know we created the file
+		 * and this can NOT set the attributes.
+		 */
+		posix_flags |= O_EXCL;
+	}
+
+	result = kvsfs_create2(obj_hdl, name, new_obj, openflags, attrs_in,
+			       attrs_out);
+
+	if (result.major == ERR_FSAL_EXIST && createmode == FSAL_UNCHECKED &&
+	    (posix_flags & O_EXCL) != 0) {
+		/* If we tried to create O_EXCL to set attributes and
+		 * failed. Remove O_EXCL and retry, also remember not
+		 * to set attributes. We still try O_CREAT again just
+		 * in case file disappears out from under us.
+		 */
+		posix_flags &= ~O_EXCL;
+		result = kvsfs_create2(obj_hdl, name, new_obj, openflags,
+				       attrs_in, attrs_out);
+	}
+
+	if (FSAL_IS_ERROR(result))
+		goto out;
+
+	/* Have we created the file */
+	created = (posix_flags & O_EXCL) != 0;
+	*caller_perm_check = false;
+
+	/* Error out for symlink & directory */
+	if (state != NULL &&
+	    attrs_out != NULL && attrs_out->type != REGULAR_FILE) {
+		if (attrs_out->type == DIRECTORY) {
+			/* Trying to open2 a directory */
+			result = fsalstat(ERR_FSAL_ISDIR, 0);
 		} else {
-			result = kvsfs_open2_by_name(obj_hdl, name, new_obj,
-						     state, openflags,
-						     attrs_in, attrs_out,
-						     caller_perm_check);
+			/* Trying to open2 any other non-regular file */
+			result = fsalstat(ERR_FSAL_SYMLINK, 0);
 		}
-	} else {
-		switch (createmode) {
-		case FSAL_UNCHECKED:
-			if (name != NULL) {
-				T_TRACE("%s", "Create Unchecked4");
-				result = kvsfs_create_unchecked(obj_hdl,
-								name,
-								state,
-								new_obj,
-								openflags,
-								attrs_in,
-								attrs_out,
-								caller_perm_check);
-			} else {
-				T_TRACE("%s", "Open Unchecked4");
-				result = kvsfs_open_unchecked(obj_hdl,
-							      state,
-							      openflags,
-							      attrs_in,
-							      attrs_out,
-							      caller_perm_check);
-			}
-			break;
-		case FSAL_GUARDED:
-			/* NFS Ganesha has already checked object existence.
-			 * According to the RFC 4.0, the behavior in this case
-			 * is the same as with Unchecked4 create.
-			 */
-			/*
-			 * NOTE: Guarded4 is not used by the linux nfs client
-			 * unless it uses NFS4.1 proto (which is not supported
-			 * yet on our side).
-			 * Therefore, this code path can be checked only
-			 * by manually creating RPC requests or by
-			 * using NFS4.1 linux nfs client.
-			 * Moreover, Guarded4 is used by NFS4.1 only if
-			 * the corresponding 4.1 session is persistent
-			 * (see fs/nfs/nfs4proc.c, nfs4_open_prepare).
-			 */
-			T_TRACE("%s", "Create Guarded4");
-			result = kvsfs_create_unchecked(obj_hdl,
-							name,
-							state,
-							new_obj,
-							openflags,
-							attrs_in,
-							attrs_out,
-							caller_perm_check);
-			break;
-		case FSAL_EXCLUSIVE:
-			/* Handles NFS4.0 version of open(O_CREAT | O_EXCL).
-			 * Note: it is different from NFS4.1. O_EXCL.
-			 */
-			if (name == NULL) {
-				/* We end up here if Ganesha detects
-				 * that is was a re-transmit, i.e.
-				 * Ganesha has done lookup() and checked
-				 * the verifier and it matched.
-				 * At this point we should just open
-				 * the file.
-				 */
-				T_TRACE("%s", "Open Exclusive4");
-				result = kvsfs_open_exclusive40(obj_hdl,
-								state,
-								openflags,
-								attrs_in,
-								attrs_out,
-								caller_perm_check);
-			} else {
-				T_TRACE("%s", "Create Exclusive4");
-				/* A normal O_EXCL create operation */
-				result = kvsfs_create_exclusive40(obj_hdl,
-								  name,
-								  state,
-								  new_obj,
-								  openflags,
-								  attrs_in,
-								  attrs_out,
-								  caller_perm_check,
-								  verifier);
-			}
-			break;
-		case FSAL_NO_CREATE:
-			/* Impossible */
-			assert(0);
-			break;
-		case FSAL_EXCLUSIVE_41:
-		case FSAL_EXCLUSIVE_9P:
-			result = fsalstat(ERR_FSAL_NOTSUPP, ENOTSUP);
-			break;
+		goto fileerr;
+	}
+
+	/* No need to call setattr2 and getattr2, as kvsfs_create2 takes care
+         * of that
+         */
+
+	/* Restore posix_flags as it was modified for create above */
+	fsal2posix_openflags(openflags, &posix_flags);
+	result = kvsfs_open2_by_handle(*new_obj, state, openflags,
+					posix_flags, verifier, attrs_out,
+					createmode, caller_perm_check);
+	goto out;
+
+fileerr:
+	if (*new_obj != NULL) {
+		/* Release the handle we just allocated. */
+		(*new_obj)->obj_ops->release(*new_obj);
+		*new_obj = NULL;
+	}
+	if (created) {
+		fsal_status_t status2;
+
+		/* Remove the file we just created */
+		status2 = kvsfs_remove(obj_hdl, *new_obj, name);
+		if (FSAL_IS_ERROR(status2)) {
+			LogEvent(COMPONENT_FSAL,
+				 "kvsfs_remove failed, error: %s",
+				 msg_fsal_err(status2.major));
 		}
 	}
 
