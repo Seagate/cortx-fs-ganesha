@@ -68,12 +68,18 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -I${CAPIINC}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-unused-variable -DM0_INTERNAL='' -DM0_EXTERN=extern -Wno-attributes -D_REENTRANT -D_GNU_SOURCE ")
 
-# Turns on ADDB-based TDSB wrappers.
-# When this flag is disabled, perfc TSDB code will be turned off.
-# When this flag is enabled, the utils module has to be
-# compiled with this flag enabled otherwise some of
-# the function calls will be undefined.
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_TSDB_ADDB")
+# Option (To enable/disable ENABLE_TSDB_ADDB mode.)
+option(ENABLE_TSDB_ADDB "Enable ENABLE_TSDB_ADDB mode." OFF)
+
+if (ENABLE_TSDB_ADDB)
+	set(BCOND_ENABLE_TSDB_ADDB "%bcond_without")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DENABLE_TSDB_ADDB")
+else (ENABLE_TSDB_ADDB)
+	set(BCOND_ENABLE_TSDB_ADDB "%bcond_with")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+endif (ENABLE_TSDB_ADDB)
+
+message( STATUS "ENABLE_TSDB_ADDB : ${ENABLE_TSDB_ADDB}" )
 
 # TODO: Wrap this with a check against build type
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g3 -fPIC")

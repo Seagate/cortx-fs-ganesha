@@ -191,7 +191,14 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 	struct kvsfs_fsal_export *kvsfs_fsal_export = 
 		container_of(ds_pub->pds->mds_fsal_export,
 			     struct kvsfs_fsal_export, export);
-	
+	void * buf = (void *)buffer;
+	/* @todo: To supress compilation warnings, a const pointer
+	 *	  buffer has been explicitly typecasted to non-const
+	 *	  pointer buf, but a more cleaner appraoch would be
+	 *	  to align the entire stack to use const everywhere
+	 *	  in order to maintain consistency.
+	 */
+
 	fd.cfs_fd.ino = kvsfs_fh->kvsfs_handle;
 
 	LogDebug(COMPONENT_PNFS," >> ENTER kvsfs_ds_write\n");
@@ -206,7 +213,7 @@ kvsfs_ds_write(struct fsal_ds_handle *const ds_pub,
 
 	/* write the data */
 	amount_written = cfs_write(kvsfs_fsal_export->cfs_fs, &cred, &fd.cfs_fd,
-				   buffer,(const)write_length, offset);
+				   buf,(const)write_length, offset);
 	if (amount_written < 0) {
 		return posix2nfs4_error(-amount_written);
 	}

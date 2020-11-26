@@ -1870,12 +1870,7 @@ static fsal_status_t kvsfs_handle_digest(const struct fsal_obj_handle *obj_hdl,
 	assert(fh_desc);
 	assert(obj_hdl);
 
-	if (output_type != FSAL_DIGEST_NFSV4) {
-		LogMajor(COMPONENT_FSAL,
-			 "Only NFSv4 File handles are supported."
-			 "Unsupported FH type: %d", output_type);
-		return fsalstat(ERR_FSAL_SERVERFAULT, 0);
-	}
+	/*We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here*/
 
 	myself = container_of(obj_hdl, const struct kvsfs_fsal_obj_handle,
 			 obj_handle);
@@ -1912,13 +1907,7 @@ fsal_status_t kvsfs_extract_handle(struct fsal_export *exp_hdl,
 
 	assert(fh_desc);
 
-	if (in_type != FSAL_DIGEST_NFSV4) {
-		LogMajor(COMPONENT_FSAL,
-			 "Only NFSv4 File handles are supported."
-			 "Unsupported FH type: %d", in_type);
-		return fsalstat(ERR_FSAL_SERVERFAULT, 0);
-	}
-
+	/*We accept both kind of digests(FSAL_DIGEST_NFSV3 and FSAL_DIGEST_NFSV4) so no check is done here*/
 
 	if (fh_size < fh_desc->len) {
 		LogMajor(COMPONENT_FSAL,
@@ -3495,9 +3484,9 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 		(unsigned long long) write_arg->iov[0].iov_len);
 
 	perfc_trace_state(PES_GEN_INIT);
-	perfc_trace_attr(PEA_R_OFFSET, write_arg->offset);
-	perfc_trace_attr(PEA_R_IOVC, write_arg->iov_count);
-	perfc_trace_attr(PEA_R_IOVL, write_arg->iov[0].iov_len);
+	perfc_trace_attr(PEA_W_OFFSET, write_arg->offset);
+	perfc_trace_attr(PEA_W_IOVC, write_arg->iov_count);
+	perfc_trace_attr(PEA_W_IOVL, write_arg->iov[0].iov_len);
 
 	/* So far, NFS Ganesha always sends only a single buffer in a FSAL.
 	 * We can use this information for keeping write2 implementation
@@ -3539,8 +3528,8 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 
 	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 out:
-	perfc_trace_attr(PEA_R_RES_MAJ, result.major);
-	perfc_trace_attr(PEA_R_RES_MIN, result.minor);
+	perfc_trace_attr(PEA_W_RES_MAJ, result.major);
+	perfc_trace_attr(PEA_W_RES_MIN, result.minor);
 	perfc_trace_state(PES_GEN_FINI);
 
 	T_EXIT0(result.major);
@@ -3581,11 +3570,8 @@ static fsal_status_t kvsfs_perf_op_commit2(struct fsal_obj_handle *obj_hdl,
 void kvsfs_handle_ops_init(struct fsal_obj_ops *ops)
 {
 	uint8_t enable_mon = 0;
-	int rc; 
 
-	rc = pthread_key_create(&perfc_tls_key, NULL);
-	dassert(rc == 0);
-
+	perfc_tsdb_setup();
 	fsal_default_obj_ops_init(ops);
 
 #ifdef ENABLE_TSDB_ADDB

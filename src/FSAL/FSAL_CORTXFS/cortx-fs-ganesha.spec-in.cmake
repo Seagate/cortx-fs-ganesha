@@ -19,6 +19,16 @@ Provides: %{name} = %{version}-%{release}
 %define _fsal_ganesha_bin_dir	%{_fsal_ganesha_dir}/bin
 %define _nfs_conf_dir @INSTALL_DIR_ROOT@/@PROJECT_NAME_BASE@/nfs/conf
 
+# Conditionally enable/disable cortx-utils options.
+%define on_off_switch() %%{?with_%1:ON}%%{!?with_%1:OFF}
+
+# A few explanation about %bcond_with and %bcond_without
+# /!\ be careful: this syntax can be quite messy
+# %bcond_with means you add a "--with" option, default = without this feature
+# %bcond_without adds a"--without" so the feature is enabled by default
+@BCOND_ENABLE_TSDB_ADDB@ enable_tsdb_addb
+%global enable_tsdb_addb%{on_off_switch enable_tsdb_addb}
+
 %description
 NFS-Ganesha FSAL for @PROJECT_NAME_BASE@-fs
 

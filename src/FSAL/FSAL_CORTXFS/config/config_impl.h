@@ -80,7 +80,7 @@ struct export_block {
 	str256_t sectype;
 	str256_t filesystem_id;
 	struct client_block client_block;
-
+	str256_t disable_acl;
 };
 
 /* ganesha config */
