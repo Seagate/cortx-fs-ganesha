@@ -2157,17 +2157,14 @@ static fsal_status_t kvsfs_file_state_close(struct kvsfs_file_state *state,
 	assert(state != NULL);
 	assert(kvsfs_file_state_invariant_open(state));
 
-	status = cfs_file_close(state, obj);
-	if (FSAL_IS_ERROR(status)) {
-		goto out;
-	}
-
 	kvsfs_share_set_new_state(obj, state->openflags, FSAL_O_CLOSED);
 
+	PTHREAD_RWLOCK_wrlock(&state->fdlock);
+	status = cfs_file_close(state, obj);
 	state->openflags = FSAL_O_CLOSED;
 	state->cfs_fd.ino = CFS_INVALID_INO_FOR_FD;
+	PTHREAD_RWLOCK_unlock(&state->fdlock);
 
-out:
 	/* We cannot guarantee that the file is always closed,
 	 * but at least we can assume that the succesfull result always
 	 * leads to the closed state
@@ -3129,13 +3126,14 @@ static fsal_status_t kvsfs_close2(struct fsal_obj_handle *obj_hdl,
 		assert(kvsfs_file_state_invariant_closed(&state_fd->kvsfs_fd));
 		break;
 
+	case STATE_TYPE_NLM_SHARE:
 	case STATE_TYPE_SHARE:
 		/* This state type is an actual open file. Let's close it. */
 		assert(kvsfs_file_state_invariant_open(&state_fd->kvsfs_fd));
 		result = kvsfs_file_state_close(&state_fd->kvsfs_fd, obj);
-		if (FSAL_IS_SUCCESS(result)) {
+		/*if (FSAL_IS_SUCCESS(result)) {
 			result = kvsfs_delete_on_close(obj_hdl);
-		}
+		}*/
 		break;
 
 	case STATE_TYPE_DELEG:
@@ -3150,7 +3148,6 @@ static fsal_status_t kvsfs_close2(struct fsal_obj_handle *obj_hdl,
 		break;
 
 	case STATE_TYPE_NLM_LOCK:
-	case STATE_TYPE_NLM_SHARE:
 	case STATE_TYPE_9P_FID:
 	case STATE_TYPE_NONE:
 		/* They will never be supported. */
@@ -3216,21 +3213,18 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 			void *caller_arg)
 {
 	struct kvsfs_fsal_obj_handle *obj;
-	struct kvsfs_file_state *fd;
+	struct kvsfs_file_state *fd = NULL;
+	struct kvsfs_file_state my_fd = {0};
 	uint64_t offset;
 	cfs_cred_t cred;
 	fsal_status_t result;
 	ssize_t nb_read;
 	void *buffer;
 	size_t buffer_size;
+	bool has_lock = false;
+	bool closefd = false;
 
 	cortxfs_cred_from_op_ctx(&cred);
-	/* We support only NFSv4 clients. kvsfs_open2 won't allow
-	 * an NFSv3 client to open file, therefore we won't end up here
-	 * in this case. Ergo, the following check is an assert precondition
-	 * but not an input parameter check.
-	 */
-	assert(read_arg->state);
 
 	/* Since we don't support NFSv3, we cannot handle READ_PLUS.
 	 * Note: do not confuse it with the NFSv4.2 READ_PLUS - it is not yet
@@ -3255,7 +3249,14 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
-	result = kvsfs_find_fd(read_arg->state, bypass, FSAL_O_READ, &fd);
+	if (read_arg->state) {
+		fd = &container_of(read_arg->state, struct kvsfs_state_fd,
+				   state)->kvsfs_fd;
+		PTHREAD_RWLOCK_rdlock(&fd->fdlock);
+	}
+
+	result = find_fd(&my_fd, obj_hdl, bypass, read_arg->state, FSAL_O_READ,
+			 &has_lock, &closefd, false);
 	if (FSAL_IS_ERROR(result)) {
 		goto out;
 	}
@@ -3264,7 +3265,7 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 	buffer_size = read_arg->iov[0].iov_len;
 	offset = read_arg->offset;
 
-	nb_read = cfs_read(obj->cfs_fs, &cred, &fd->cfs_fd,
+	nb_read = cfs_read(obj->cfs_fs, &cred, &my_fd.cfs_fd,
 			   buffer, buffer_size, offset);
 	if (nb_read < 0) {
 		result = fsalstat(posix2fsal_error(-nb_read), -nb_read);
@@ -3277,6 +3278,13 @@ static void kvsfs_read2(struct fsal_obj_handle *obj_hdl,
 
 	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 out:
+	if (fd)
+		PTHREAD_RWLOCK_unlock(&fd->fdlock);
+	if (closefd)
+		CORTXFSFSAL_close(obj, &my_fd);
+	if (has_lock)
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+
 	perfc_trace_attr(PEA_R_RES_MAJ, result.major);
 	perfc_trace_attr(PEA_R_RES_MIN, result.minor);
 	perfc_trace_state(PES_GEN_FINI);
@@ -3417,7 +3425,8 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 			 void *caller_arg)
 {
 	struct kvsfs_fsal_obj_handle *obj;
-	struct kvsfs_file_state *fd;
+	struct kvsfs_file_state *fd = NULL;
+	struct kvsfs_file_state my_fd = {0};
 	uint64_t offset;
 	cfs_cred_t cred;
 	fsal_status_t result;
@@ -3425,23 +3434,14 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 	void *buffer;
 	size_t buffer_size;
 	int rc;
+	bool has_lock = false;
+	bool closefd = false;
+	fsal_openflags_t openflags = FSAL_O_WRITE;
 
 	cortxfs_cred_from_op_ctx(&cred);
-	/* TODO: A temporary solution for keeping metadata (stat) consistent.
-	 * The lock allows us to serialize all WRITE requests ensuring
-	 * that stat is always updated in accordance with the amount
-	 * of written data.
-	 * See EOS-1424 for details.
-	 */
-	PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
 
-	/* We support only NFSv4 clients. kvsfs_open2 won't allow
-	 * an NFSv3 client to open file, therefore we won't end up here
-	 * in this case. Ergo, the following check is an assert precondition
-	 * but not an input parameter check.
-	 */
-	assert(write_arg->state);
 	/* Since we don't support NFSv3, we cannot handle WRITE_PLUS */
+	/* Sachin - Need to revisit */
 	assert(write_arg->info == NULL);
 
 	T_ENTER(">>> (%p, %p)", obj_hdl, write_arg->state);
@@ -3463,10 +3463,22 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 	 * The following pre-condition helps us to make sure that
 	 * NFS Ganesha still uses the same scheme.
 	 */
+	/* Sachin - Below check needs revisit */
 	assert(write_arg->iov_count == 1);
 
+	/* Acquire state's fdlock to prevent OPEN upgrade closing the
+	 * file descriptor while we use it.
+	 */
+	if (write_arg->state) {
+		fd = &container_of(write_arg->state, struct kvsfs_state_fd,
+				   state)->kvsfs_fd;
+		PTHREAD_RWLOCK_rdlock(&fd->fdlock);
+	}
+
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
-	result = kvsfs_find_fd(write_arg->state, bypass, FSAL_O_WRITE, &fd);
+
+	result = find_fd(&my_fd, obj_hdl, bypass, write_arg->state, openflags,
+			 &has_lock, &closefd, false);
 	if (FSAL_IS_ERROR(result)) {
 		goto out;
 	}
@@ -3475,7 +3487,7 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 	buffer_size = write_arg->iov[0].iov_len;
 	offset = write_arg->offset;
 
-	nb_write = cfs_write(obj->cfs_fs, &cred, &fd->cfs_fd,
+	nb_write = cfs_write(obj->cfs_fs, &cred, &my_fd.cfs_fd,
 			     buffer, buffer_size, offset);
 	if (nb_write < 0) {
 		result = fsalstat(posix2fsal_error(-nb_write), -nb_write);
@@ -3496,12 +3508,18 @@ static inline void kvsfs_write2(struct fsal_obj_handle *obj_hdl,
 
 	result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 out:
+	if (fd)
+		PTHREAD_RWLOCK_unlock(&fd->fdlock);
+	if (closefd)
+		CORTXFSFSAL_close(obj, &my_fd);
+	if (has_lock)
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
+
 	perfc_trace_attr(PEA_W_RES_MAJ, result.major);
 	perfc_trace_attr(PEA_W_RES_MIN, result.minor);
 	perfc_trace_state(PES_GEN_FINI);
 
 	T_EXIT0(result.major);
-	PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 	done_cb(obj_hdl, result, write_arg, caller_arg);
 }
 
