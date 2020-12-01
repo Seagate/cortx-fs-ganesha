@@ -1488,13 +1488,6 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 	myself =
 		container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
-	/* TODO : Remove call to cfs_fh_from_ino
-	 * Currently, FH is temporarily obtained from the disk
-	 * because still FH is not in use at all the places.
-	 * When all such dependency is removed, the FH will be
-	 * extracted directly from kvsfs_fsal_obj_handle.
-	 */
-	//retval = cfs_fh_from_ino(myself->cfs_fs, &ino, &fh);
 	fh = myself->handle;
 	stat = cfs_fh_stat(fh);
 
