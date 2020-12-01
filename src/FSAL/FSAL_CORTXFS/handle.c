@@ -1494,7 +1494,8 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 	 * When all such dependency is removed, the FH will be
 	 * extracted directly from kvsfs_fsal_obj_handle.
 	 */
-	retval = cfs_fh_from_ino(myself->cfs_fs, &ino, &fh);
+	//retval = cfs_fh_from_ino(myself->cfs_fs, &ino, &fh);
+	fh = myself->handle;
 	stat = cfs_fh_stat(fh);
 
 	result = fsalstat(posix2fsal_error(-retval), retval);
