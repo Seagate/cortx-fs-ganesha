@@ -1488,11 +1488,14 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 	myself =
 		container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+	/* TODO : Remove call to cfs_fh_from_ino
+	 * Currently, FH is temporarily obtained from the disk
+	 * because still FH is not in use at all the places.
+	 * When all such dependency is removed, the FH will be
+	 * extracted directly from kvsfs_fsal_obj_handle.
+	 */
 	retval = cfs_fh_from_ino(myself->cfs_fs, &ino, &fh);
 	stat = cfs_fh_stat(fh);
-
-	//retval = cfs_getattr(myself->cfs_fs, &cred,
-	//		     kvsfs_fh_to_ino(myself->handle), stat);
 
 	result = fsalstat(posix2fsal_error(-retval), retval);
 	if (FSAL_IS_ERROR(result)) {
@@ -1701,7 +1704,9 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 		/* If the size does not need to be change, then
 		 * we can simply update the stats associated with the inode.
 		 */
-		rc = cfs_setattr(fh, &cred, &stats, flags);
+		if (rc != 0) {
+			rc = cfs_setattr(fh, &cred, &stats, flags);
+		}
 		result = fsalstat(posix2fsal_error(-rc), -rc);
 	}
 
