@@ -1479,7 +1479,7 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 	cortxfs_cred_from_op_ctx(&cred);
 	T_ENTER(">>> (%p)", obj_hdl);
-	    perfc_trace_state(PES_GEN_INIT);
+	perfc_trace_state(PES_GEN_INIT);
 
 	if (attrs_out == NULL) {
 		retval = 0;
@@ -1621,7 +1621,7 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
                                            struct attrlist *attrs)
 {
 	fsal_status_t result;
-	int rc;
+	int rc, rc1;
 	struct kvsfs_fsal_obj_handle *obj;
 	struct stat stats = { 0 };
 	struct cfs_fh *fh = NULL;
@@ -1693,15 +1693,22 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 		/* Truncate is a special IO-related operation */
 		result = kvsfs_ftruncate(obj_hdl, state, bypass, &stats, flags);
 	} else {
-		rc = cfs_fh_from_ino(obj->cfs_fs,
-					kvsfs_fh_to_ino(obj->handle), &fh);
 		/* If the size does not need to be change, then
 		 * we can simply update the stats associated with the inode.
 		 */
-		if (rc != 0) {
-			rc = cfs_setattr(fh, &cred, &stats, flags);
+		rc = cfs_fh_from_ino(obj->cfs_fs,
+				     kvsfs_fh_to_ino(obj->handle), &fh);
+		if (rc == 0) {
+			rc1 = cfs_setattr(fh, &cred, &stats, flags);
 		}
-		result = fsalstat(posix2fsal_error(-rc), -rc);
+		result = fsalstat(posix2fsal_error(-rc1), -rc1);
+		if (fh) {
+			if (rc1 == 0) {
+				cfs_fh_destroy_and_dump_stat(fh);
+			} else {
+				cfs_fh_destroy(fh);
+			}
+		}
 	}
 
 out:
@@ -2471,8 +2478,6 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	if (attrs_out != NULL) {
 		rc = cfs_fh_from_ino(obj->cfs_fs, &ino, &fh);
 		stat = cfs_fh_stat(fh);
-		//rc = cfs_getattr(obj->cfs_fs, &cred,
-		//		 kvsfs_fh_to_ino(obj->handle), stat);
 		if (rc < 0) {
 			status = fsalstat(posix2fsal_error(-rc), -rc);
 			goto out;
