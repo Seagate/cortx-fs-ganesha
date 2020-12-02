@@ -1700,8 +1700,10 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 				     kvsfs_fh_to_ino(obj->handle), &fh);
 		if (rc == 0) {
 			rc1 = cfs_setattr(fh, &cred, &stats, flags);
+			result = fsalstat(posix2fsal_error(-rc1), -rc1);
+		} else {
+			result = fsalstat(posix2fsal_error(-rc), -rc);
 		}
-		result = fsalstat(posix2fsal_error(-rc1), -rc1);
 		if (fh) {
 			if (rc1 == 0) {
 				cfs_fh_destroy_and_dump_stat(fh);
