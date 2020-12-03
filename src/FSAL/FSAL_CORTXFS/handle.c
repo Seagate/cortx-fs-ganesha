@@ -1629,7 +1629,7 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 
 	T_ENTER(">>> (obj=%p, bypass=%d, state=%p, attrs=%p)", obj_hdl,
 		bypass, state, attrs);
-    perfc_trace_state(PES_GEN_INIT);
+	perfc_trace_state(PES_GEN_INIT);
 
 	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
@@ -1703,9 +1703,9 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 
 out:
 	T_EXIT0(result.major);
-    perfc_trace_attr(PEA_SETATTR_RES_MAJ, result.major);
-    perfc_trace_attr(PEA_SETATTR_RES_MIN, result.minor);
-    perfc_trace_state(PES_GEN_FINI);
+	perfc_trace_attr(PEA_SETATTR_RES_MAJ, result.major);
+	perfc_trace_attr(PEA_SETATTR_RES_MIN, result.minor);
+	perfc_trace_state(PES_GEN_FINI);
 	return result;
 }
 
@@ -2174,105 +2174,6 @@ static fsal_status_t kvsfs_file_state_close(struct kvsfs_file_state *state,
 	}
 
 	return status;
-}
-
-/*****************************************************************************/
-/** This function is kind of remake fsal_find_fd function.
- * kvsfs_get_special_fd is for handling special state id. It will make call to 
- * kvsfs_file_state_open to have the cfs_fd populated. Currently it do not
- * care about locking / share reservations. The basic assumption is, there
- * is no such file/object already opened, and hence the stateid is NULL.
- * Observation:
- * In other FSALs (like VFS, GLUSTERFS) first we get the fd by calling find_fd
- * routine written for that specific FSAL.
- * find_fd in turn calls generic (common for all FSALs) routine fsal_find_fd.
- * fsal_find_fd checks the state, which is being passed by client, and for NULL
- * state, it end up calling fsal_reopen_obj.
- * fsal_reopen_obj is again a common code for all FSALs. 
- * Takes read lock on the object handle. It does various checks on share
- * reservations, lock related things. Finally it calls open_func for that
- * respective FSAL to open the file.
- * CORTSFS_FSAL has no notion of file descriptor. We track the in use objects
- * (files) via maintaining the inode/FID in cfs_fd. As of now we are not
- * supporting share reservations. So need to get fill in the cfs_fd structure
- * for the object which is being operated with state as NULL.
- */
-static fsal_status_t kvsfs_get_special_fd(struct kvsfs_fsal_obj_handle *obj,
-					  fsal_openflags_t openflags,
-					  struct kvsfs_file_state *fd)
-{
-	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
-
-	status = kvsfs_file_state_open(fd, openflags, obj, false);
-	return status;
-}
-
-/******************************************************************************/
-/** Find a readable/writeable FD using a file state (including locking state)
- * as a base.
- * Sometimes an NFS Client may try to use a stateid associated with a state lock
- * to read/write/setattr(truncate) a file. Such a stateid cannot be used
- * directly in read/write calls. However, it is possible to use this state
- * to identify the correponding open state which, in turn, can be used in
- * IO operations.
- * NFS Ganesha has similiar function ::fsal_find_fd which does the same
- * thing but it has 13 arguments and handles all possible scenarious like
- * NFSv3, share reservation checks, NFSv4 open, NFSv4 locks, NLM locks
- * and so on. On contrary, kvsfs_find_fd handles only NFSv4 open and locked
- * states. In future, we may have to add handling of bypass mode
- * (special stateids, see EOS-1479).
- * @param fsal_state A file state passed down from NFS Ganesha for IO callback.
- * @param bypass Bypass share reservations flag.
- * @param[out] fd Pointer to an FD to be filled.
- * @return So far always returns OK.
- */
-static fsal_status_t kvsfs_find_fd(struct state_t *fsal_state,
-				   bool bypass,
-				   fsal_openflags_t openflags,
-				   struct kvsfs_file_state **fd)
-{
-	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
-	struct kvsfs_state_fd *kvsfs_state;
-
-	T_ENTER(">>> (state=%p, bypass=%d, openflags=%d, fd=%p)",
-		fsal_state, (int) bypass, (int) openflags, fd);
-
-	assert(fd != NULL);
-
-	assert(fsal_state->state_type == STATE_TYPE_LOCK ||
-	       fsal_state->state_type == STATE_TYPE_SHARE ||
-	       fsal_state->state_type == STATE_TYPE_DELEG);
-
-	/* TODO:EOS-1479: We don't suppport special state ids yet. */
-	assert(bypass == false);
-	assert(fsal_state != NULL);
-
-	/* We don't have an open file for locking states,
-	 * therefore let's just reuse the associated open state.
-	 */
-	if (fsal_state->state_type == STATE_TYPE_LOCK) {
-		fsal_state = fsal_state->state_data.lock.openstate;
-		assert(fsal_state != NULL);
-	}
-
-	kvsfs_state = container_of(fsal_state, struct kvsfs_state_fd, state);
-
-	if (open_correct(kvsfs_state->kvsfs_fd.openflags, openflags)) {
-		*fd = &kvsfs_state->kvsfs_fd;
-		goto out;
-	}
-
-	/* if there is no suitable FD for this fsal_state then it is likely
-	 * has been caused by a state type which we cannot handle right now.
-	 * Let's just print some logs and then fail right here.
-	 */
-	LogCrit(COMPONENT_FSAL, "Unsupported state type: %d",
-		(int) fsal_state->state_type);
-	assert(0); /* Unreachable */
-
-out:
-	T_EXIT0(result.major);
-	return result;
 }
 
 fsal_status_t CORTXFSFSAL_close(struct kvsfs_fsal_obj_handle *obj,
@@ -3347,9 +3248,11 @@ static fsal_status_t kvsfs_ftruncate(struct fsal_obj_handle *obj_hdl,
 	int rc = 0;
 	fsal_status_t result = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	struct kvsfs_file_state *fd = NULL;
+	struct kvsfs_file_state my_fd = {0};
 	struct kvsfs_fsal_obj_handle *obj = NULL;
 	cfs_cred_t cred;
-	bool special_fd = false;
+	bool has_lock = false;
+	bool closefd = false;
 
 	T_ENTER0;
 
@@ -3360,34 +3263,26 @@ static fsal_status_t kvsfs_ftruncate(struct fsal_obj_handle *obj_hdl,
 	cortxfs_cred_from_op_ctx(&cred);
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
 
-	if (state == NULL) {
-		/* special stateid handling required */
-		fd = gsh_calloc(1, sizeof(struct kvsfs_file_state));
-		result = kvsfs_get_special_fd(obj, FSAL_O_WRITE, fd);
-		if (FSAL_IS_ERROR(result)) {
-			gsh_free(fd);
-			goto out;
-		}
-		special_fd = true;
-	} else {
-		/* Check if there is an open state which has O_WRITE openflag
-		 * set.
-		 */
-		result = kvsfs_find_fd(state, bypass, FSAL_O_WRITE, &fd);
-		if (FSAL_IS_ERROR(result)) {
-			goto out;
-		}
+	if (state) {
+		fd = &container_of(state, struct kvsfs_state_fd,
+				   state)->kvsfs_fd;
+		PTHREAD_RWLOCK_rdlock(&fd->fdlock);
 	}
-	assert(fd != NULL);
+	result = find_fd(&my_fd, obj_hdl, bypass, state, FSAL_O_WRITE,
+			 &has_lock, &closefd, false);
+	if (FSAL_IS_ERROR(result))
+		goto out;
 
-	rc = cfs_truncate(obj->cfs_fs, &cred, &fd->cfs_fd.ino,
+	rc = cfs_truncate(obj->cfs_fs, &cred, &my_fd.cfs_fd.ino,
 			  new_stat, new_stat_flags);
 
 out:
-	if (special_fd) {
-		result = kvsfs_file_state_close(fd, obj);
-		gsh_free(fd);
-	}
+	if (fd)
+		PTHREAD_RWLOCK_unlock(&fd->fdlock);
+	if (closefd)
+		CORTXFSFSAL_close(obj, &my_fd);
+	if (has_lock)
+		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 	if (rc != 0) {
 		result = fsalstat(posix2fsal_error(-rc), -rc);
 	}
