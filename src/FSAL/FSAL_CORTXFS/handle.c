@@ -1494,15 +1494,14 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 	 * When all such dependency is removed, the FH will be
 	 * extracted directly from kvsfs_fsal_obj_handle.
 	 */
-	//fh = myself->handle;
 	ino = kvsfs_fh_to_ino(myself->handle);
 	retval = cfs_fh_from_ino(myself->cfs_fs, ino, &fh);
-	stat = cfs_fh_stat(fh);
-
 	result = fsalstat(posix2fsal_error(-retval), retval);
 	if (FSAL_IS_ERROR(result)) {
 		goto out;
 	}
+
+	stat = cfs_fh_stat(fh);
 
 	posix2fsal_attributes_all(stat, attrs_out);
 	if (kvsfs_is_acl_enabled()) {
@@ -1706,6 +1705,12 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 	} else {
 		/* If the size does not need to be change, then
 		 * we can simply update the stats associated with the inode.
+		 */
+		/* TODO : Remove call to cfs_fh_from_ino
+		 * Currently, FH is temporarily obtained from the disk
+		 * because still FH is not in use at all the places.
+		 * When all such dependency is removed, the FH will be
+		 * extracted directly from kvsfs_fsal_obj_handle.
 		 */
 		rc = cfs_fh_from_ino(obj->cfs_fs,
 				     kvsfs_fh_to_ino(obj->handle), &fh);
@@ -2490,12 +2495,18 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	}
 
 	if (attrs_out != NULL) {
+		/* TODO : Remove call to cfs_fh_from_ino
+		 * Currently, FH is temporarily obtained from the disk
+		 * because still FH is not in use at all the places.
+		 * When all such dependency is removed, the FH will be
+		 * extracted directly from kvsfs_fsal_obj_handle.
+		 */
 		rc = cfs_fh_from_ino(obj->cfs_fs, ino, &fh);
-		stat = cfs_fh_stat(fh);
 		if (rc < 0) {
 			status = fsalstat(posix2fsal_error(-rc), -rc);
 			goto out;
 		}
+		stat = cfs_fh_stat(fh);
 
 		posix2fsal_attributes_all(stat, attrs_out);
 	}
