@@ -1472,7 +1472,7 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 	struct kvsfs_fsal_obj_handle *myself;
 	int retval = 0;
 	cfs_ino_t * ino = NULL;
-	struct stat *stat = NULL;
+	struct stat stat;
 	struct cfs_fh * fh = NULL;
 	cfs_cred_t cred;
 	fsal_status_t result;
@@ -1501,9 +1501,13 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 		goto out;
 	}
 
-	stat = cfs_fh_stat(fh);
+	retval = cfs_getattr(fh, &stat);
+	result = fsalstat(posix2fsal_error(-retval), retval);
+	if (FSAL_IS_ERROR(result)) {
+		goto out;
+	}
 
-	posix2fsal_attributes_all(stat, attrs_out);
+	posix2fsal_attributes_all(&stat, attrs_out);
 	if (kvsfs_is_acl_enabled()) {
 		fsal_acl_t *acl = NULL;
 		result = kvsfs_getacl(myself, &cred, &acl);
@@ -2480,7 +2484,7 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	cfs_cred_t cred;
 	struct kvsfs_file_state *fd;
 	cfs_ino_t * ino = NULL;
-	struct stat *stat = NULL;
+	struct stat stat;
 	struct cfs_fh * fh = NULL;
 
 	perfc_trace_inii(PFT_OPEN2_BY_HANDLE, PEM_FSAL_TO_NFS);
@@ -2506,9 +2510,13 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 			status = fsalstat(posix2fsal_error(-rc), -rc);
 			goto out;
 		}
-		stat = cfs_fh_stat(fh);
+		rc = cfs_getattr(fh, &stat);
+		if (rc < 0) {
+			status = fsalstat(posix2fsal_error(-rc), -rc);
+			goto out;
+		}
 
-		posix2fsal_attributes_all(stat, attrs_out);
+		posix2fsal_attributes_all(&stat, attrs_out);
 	}
 
 	/* kvsfs_file_state_open does not call test_access and
@@ -2520,6 +2528,9 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	}
 
 out:
+	if (fh) {
+		cfs_fh_destroy(fh);
+	}
 	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return status;
 }
