@@ -1470,14 +1470,16 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
                                             struct attrlist *attrs_out)
 {
 	struct kvsfs_fsal_obj_handle *myself;
-	struct stat stat;
 	int retval = 0;
+	cfs_ino_t * ino = NULL;
+	struct stat stat;
+	struct cfs_fh * fh = NULL;
 	cfs_cred_t cred;
 	fsal_status_t result;
 
 	cortxfs_cred_from_op_ctx(&cred);
 	T_ENTER(">>> (%p)", obj_hdl);
-    perfc_trace_state(PES_GEN_INIT);
+	perfc_trace_state(PES_GEN_INIT);
 
 	if (attrs_out == NULL) {
 		retval = 0;
@@ -1486,10 +1488,20 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 
 	myself =
 		container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+	/* TODO : Remove call to cfs_fh_from_ino
+	 * Currently, FH is temporarily obtained from the disk
+	 * because still FH is not in use at all the places.
+	 * When all such dependency is removed, the FH will be
+	 * extracted directly from kvsfs_fsal_obj_handle.
+	 */
+	ino = kvsfs_fh_to_ino(myself->handle);
+	retval = cfs_fh_from_ino(myself->cfs_fs, ino, &fh);
+	result = fsalstat(posix2fsal_error(-retval), retval);
+	if (FSAL_IS_ERROR(result)) {
+		goto out;
+	}
 
-	retval = cfs_getattr(myself->cfs_fs, &cred,
-			     kvsfs_fh_to_ino(myself->handle), &stat);
-
+	retval = cfs_getattr(fh, &stat);
 	result = fsalstat(posix2fsal_error(-retval), retval);
 	if (FSAL_IS_ERROR(result)) {
 		goto out;
@@ -1516,6 +1528,9 @@ static  inline fsal_status_t kvsfs_getattrs(struct fsal_obj_handle *obj_hdl,
 	}
 
 out:
+	if (fh) {
+		cfs_fh_destroy(fh);
+	}
 	T_EXIT0(result.major);
     perfc_trace_attr(PEA_GETATTR_RES_MAJ, result.major);
     perfc_trace_attr(PEA_GETATTR_RES_MIN, result.minor);
@@ -1620,9 +1635,10 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
                                            struct attrlist *attrs)
 {
 	fsal_status_t result;
-	int rc;
+	int rc, rc1;
 	struct kvsfs_fsal_obj_handle *obj;
 	struct stat stats = { 0 };
+	struct cfs_fh *fh = NULL;
 	int flags = 0;
 	cfs_cred_t cred;
 
@@ -1694,10 +1710,27 @@ static inline fsal_status_t kvsfs_setattrs(struct fsal_obj_handle *obj_hdl,
 		/* If the size does not need to be change, then
 		 * we can simply update the stats associated with the inode.
 		 */
-		rc = cfs_setattr(obj->cfs_fs, &cred,
-				 kvsfs_fh_to_ino(obj->handle),
-				 &stats, flags);
-		result = fsalstat(posix2fsal_error(-rc), -rc);
+		/* TODO : Remove call to cfs_fh_from_ino
+		 * Currently, FH is temporarily obtained from the disk
+		 * because still FH is not in use at all the places.
+		 * When all such dependency is removed, the FH will be
+		 * extracted directly from kvsfs_fsal_obj_handle.
+		 */
+		rc = cfs_fh_from_ino(obj->cfs_fs,
+				     kvsfs_fh_to_ino(obj->handle), &fh);
+		if (rc == 0) {
+			rc1 = cfs_setattr(fh, &cred, &stats, flags);
+			result = fsalstat(posix2fsal_error(-rc1), -rc1);
+		} else {
+			result = fsalstat(posix2fsal_error(-rc), -rc);
+		}
+		if (fh) {
+			if (rc1 == 0) {
+				cfs_fh_destroy_and_dump_stat(fh);
+			} else {
+				cfs_fh_destroy(fh);
+			}
+		}
 	}
 
 out:
@@ -2450,12 +2483,15 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	cfs_cred_t cred;
 	struct kvsfs_file_state *fd;
+	cfs_ino_t * ino = NULL;
 	struct stat stat;
+	struct cfs_fh * fh = NULL;
 
 	perfc_trace_inii(PFT_OPEN2_BY_HANDLE, PEM_FSAL_TO_NFS);
 	cortxfs_cred_from_op_ctx(&cred);
 	fd = &container_of(state, struct kvsfs_state_fd, state)->kvsfs_fd;
 	obj = container_of(obj_hdl, struct kvsfs_fsal_obj_handle, obj_handle);
+	ino = kvsfs_fh_to_ino(obj->handle);
 
 	status = kvsfs_file_state_open(fd, openflags, obj, false);
 	if (FSAL_IS_ERROR(status)) {
@@ -2463,8 +2499,18 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	}
 
 	if (attrs_out != NULL) {
-		rc = cfs_getattr(obj->cfs_fs, &cred,
-				 kvsfs_fh_to_ino(obj->handle), &stat);
+		/* TODO : Remove call to cfs_fh_from_ino
+		 * Currently, FH is temporarily obtained from the disk
+		 * because still FH is not in use at all the places.
+		 * When all such dependency is removed, the FH will be
+		 * extracted directly from kvsfs_fsal_obj_handle.
+		 */
+		rc = cfs_fh_from_ino(obj->cfs_fs, ino, &fh);
+		if (rc < 0) {
+			status = fsalstat(posix2fsal_error(-rc), -rc);
+			goto out;
+		}
+		rc = cfs_getattr(fh, &stat);
 		if (rc < 0) {
 			status = fsalstat(posix2fsal_error(-rc), -rc);
 			goto out;
@@ -2482,6 +2528,9 @@ static fsal_status_t kvsfs_open2_by_handle(struct fsal_obj_handle *obj_hdl,
 	}
 
 out:
+	if (fh) {
+		cfs_fh_destroy(fh);
+	}
 	perfc_trace_finii(PERFC_TLS_POP_DONT_VERIFY);
 	return status;
 }
